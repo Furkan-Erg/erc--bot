@@ -1,0 +1,21 @@
+{
+  "name": "ercu-bot",
+  "version": "1.0.0",
+  "description": "A fun Discord bot with memes, mini-games/economy, and moderation utilities.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "canvas": "^2.11.2",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "canvas@2.11.2": true
+  }
+}
