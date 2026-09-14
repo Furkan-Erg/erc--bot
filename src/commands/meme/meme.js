@@ -2,7 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { infoEmbed, errorEmbed } = require('../../utils/embeds');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('memes').setDescription('Get a random meme.'),
+  data: new SlashCommandBuilder().setName('meme').setDescription('Rastkele meme getirir.'),
   async execute(interaction) {
     await interaction.deferReply();
 
