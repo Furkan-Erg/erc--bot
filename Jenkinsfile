@@ -26,9 +26,6 @@ pipeline {
         }
 
         stage('Deploy') {
-            when {
-                branch 'main'
-            }
             steps {
                 sh '''
                     cd /home/furkan/ercu-bot
