@@ -1,0 +1,53 @@
+// dogru: secenekler dizisindeki doğru cevabın indeksi
+const SORULAR = [
+  { kategori: 'Coğrafya', soru: 'Türkiye\'nin başkenti neresidir?', secenekler: ['Ankara', 'İstanbul', 'İzmir', 'Bursa'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Türkiye\'nin en uzun nehri hangisidir?', secenekler: ['Kızılırmak', 'Fırat', 'Sakarya', 'Yeşilırmak'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Türkiye\'nin en büyük gölü hangisidir?', secenekler: ['Van Gölü', 'Tuz Gölü', 'Beyşehir Gölü', 'İznik Gölü'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Türkiye\'nin en yüksek dağı hangisidir?', secenekler: ['Ağrı Dağı', 'Erciyes', 'Uludağ', 'Kaçkar'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Türkiye kaç ile sahiptir?', secenekler: ['81', '67', '76', '85'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Yüzölçümü en büyük ilimiz hangisidir?', secenekler: ['Konya', 'Sivas', 'Ankara', 'Erzurum'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'İstanbul Boğazı hangi iki denizi birbirine bağlar?', secenekler: ['Karadeniz - Marmara', 'Marmara - Ege', 'Ege - Akdeniz', 'Karadeniz - Ege'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Çanakkale Boğazı hangi iki denizi birbirine bağlar?', secenekler: ['Marmara - Ege', 'Karadeniz - Marmara', 'Ege - Akdeniz', 'Akdeniz - Marmara'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Pamukkale travertenleri hangi ilimizdedir?', secenekler: ['Denizli', 'Muğla', 'Aydın', 'Isparta'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Efes Antik Kenti hangi ilimizin sınırları içindedir?', secenekler: ['İzmir', 'Aydın', 'Manisa', 'Muğla'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Truva Antik Kenti hangi ilimizdedir?', secenekler: ['Çanakkale', 'Balıkesir', 'Edirne', 'Tekirdağ'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Sümela Manastırı hangi ilimizdedir?', secenekler: ['Trabzon', 'Rize', 'Giresun', 'Artvin'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Göbeklitepe hangi ilimizdedir?', secenekler: ['Şanlıurfa', 'Gaziantep', 'Mardin', 'Diyarbakır'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Türkiye\'nin kaç komşusu vardır?', secenekler: ['8', '6', '7', '9'], dogru: 0 },
+  { kategori: 'Coğrafya', soru: 'Kapadokya ağırlıklı olarak hangi ilimizdedir?', secenekler: ['Nevşehir', 'Kayseri', 'Niğde', 'Aksaray'], dogru: 0 },
+
+  { kategori: 'Tarih', soru: 'Cumhuriyet hangi yıl ilan edilmiştir?', secenekler: ['1923', '1920', '1922', '1924'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'İstanbul hangi yıl fethedilmiştir?', secenekler: ['1453', '1071', '1492', '1526'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Malazgirt Savaşı hangi yıl yapılmıştır?', secenekler: ['1071', '1176', '1243', '1048'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Mohaç Meydan Muharebesi hangi yıl yapılmıştır?', secenekler: ['1526', '1453', '1571', '1683'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Osmanlı Devleti\'nin kurucusu kimdir?', secenekler: ['Osman Bey', 'Orhan Gazi', 'Ertuğrul Gazi', 'Fatih Sultan Mehmet'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Türkiye Cumhuriyeti\'nin ilk cumhurbaşkanı kimdir?', secenekler: ['Mustafa Kemal Atatürk', 'İsmet İnönü', 'Celâl Bayar', 'Cemal Gürsel'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Ankara hangi yıl başkent olmuştur?', secenekler: ['1923', '1920', '1922', '1925'], dogru: 0 },
+  { kategori: 'Tarih', soru: 'Anıtkabir hangi şehirdedir?', secenekler: ['Ankara', 'İstanbul', 'Selanik', 'İzmir'], dogru: 0 },
+
+  { kategori: 'Kültür', soru: 'Nasreddin Hoca en çok hangi ilçeyle anılır?', secenekler: ['Akşehir', 'Sivrihisar', 'Beyşehir', 'Ilgın'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Kız Kulesi hangi şehirdedir?', secenekler: ['İstanbul', 'İzmir', 'Mersin', 'Çanakkale'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Orhan Pamuk hangi yıl Nobel Edebiyat Ödülü\'nü kazandı?', secenekler: ['2006', '2002', '2010', '1998'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Aziz Sancar hangi dalda Nobel Ödülü kazanmıştır?', secenekler: ['Kimya', 'Tıp', 'Fizik', 'Edebiyat'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Gaziantep hangi tatlısıyla ünlüdür?', secenekler: ['Baklava', 'Künefe', 'Kadayıf', 'Lokma'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Kahramanmaraş hangi ürünüyle meşhurdur?', secenekler: ['Dondurma', 'Pastırma', 'Lokum', 'Helva'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Kayseri hangi ürünüyle meşhurdur?', secenekler: ['Pastırma', 'Dondurma', 'Baklava', 'Peynir'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Türkiye\'de çay üretiminin merkezi hangi ilimizdir?', secenekler: ['Rize', 'Trabzon', 'Artvin', 'Ordu'], dogru: 0 },
+  { kategori: 'Kültür', soru: 'Türk bayrağında hangi şekiller bulunur?', secenekler: ['Ay ve yıldız', 'Güneş ve ay', 'Yıldız ve kartal', 'Ay ve kılıç'], dogru: 0 },
+
+  { kategori: 'Spor', soru: 'Galatasaray UEFA Kupası\'nı hangi yıl kazandı?', secenekler: ['2000', '1996', '2002', '2005'], dogru: 0 },
+  { kategori: 'Spor', soru: 'Türkiye 2002 Dünya Kupası\'nda kaçıncı olmuştur?', secenekler: ['3.', '2.', '4.', '1.'], dogru: 0 },
+  { kategori: 'Spor', soru: 'Bir futbol takımı sahaya kaç oyuncuyla çıkar?', secenekler: ['11', '10', '12', '9'], dogru: 0 },
+  { kategori: 'Spor', soru: 'Olimpiyat Oyunları kaç yılda bir düzenlenir?', secenekler: ['4', '2', '3', '5'], dogru: 0 },
+  { kategori: 'Spor', soru: 'Satranç tahtasında kaç kare vardır?', secenekler: ['64', '81', '100', '48'], dogru: 0 },
+
+  { kategori: 'Genel Kültür', soru: 'Suyun kimyasal formülü nedir?', secenekler: ['H2O', 'CO2', 'O2', 'NaCl'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'Güneş sistemindeki en büyük gezegen hangisidir?', secenekler: ['Jüpiter', 'Satürn', 'Dünya', 'Neptün'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'İnsan vücudundaki en büyük organ hangisidir?', secenekler: ['Deri', 'Karaciğer', 'Akciğer', 'Kalp'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'Dünyanın en büyük okyanusu hangisidir?', secenekler: ['Büyük Okyanus', 'Atlas Okyanusu', 'Hint Okyanusu', 'Arktik Okyanusu'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'Japonya\'nın başkenti neresidir?', secenekler: ['Tokyo', 'Osaka', 'Kyoto', 'Nagoya'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'Mona Lisa tablosunun ressamı kimdir?', secenekler: ['Leonardo da Vinci', 'Michelangelo', 'Rafael', 'Van Gogh'], dogru: 0 },
+  { kategori: 'Genel Kültür', soru: 'Dünyada kaç kıta vardır?', secenekler: ['7', '5', '6', '8'], dogru: 0 },
+];
+
+module.exports = { SORULAR };

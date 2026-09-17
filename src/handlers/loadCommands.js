@@ -13,12 +13,18 @@ function loadCommands(client) {
     const files = fs.readdirSync(categoryPath).filter((f) => f.endsWith('.js'));
 
     for (const file of files) {
-      const command = require(path.join(categoryPath, file));
-      if (!command?.data || !command?.execute) {
-        logger.warn(`Skipping invalid command file: ${category.name}/${file}`);
-        continue;
+      // Tek bir komutun bağımlılığı (örn. native canvas) bozuksa tüm bot çökmesin.
+      try {
+        const command = require(path.join(categoryPath, file));
+        if (!command?.data || !command?.execute) {
+          logger.warn(`Skipping invalid command file: ${category.name}/${file}`);
+          continue;
+        }
+        command.category = category.name;
+        client.commands.set(command.data.name, command);
+      } catch (err) {
+        logger.error(`Komut yüklenemedi: ${category.name}/${file}`, err);
       }
-      client.commands.set(command.data.name, command);
     }
   }
 

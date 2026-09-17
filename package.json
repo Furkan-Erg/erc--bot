@@ -10,7 +10,6 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@discordjs/voice": "^0.19.2",
-    "@distube/ytdl-core": "^4.16.12",
     "better-sqlite3": "^11.9.1",
     "canvas": "^2.11.2",
     "discord.js": "^14.16.3",

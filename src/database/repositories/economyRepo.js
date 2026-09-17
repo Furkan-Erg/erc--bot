@@ -72,6 +72,17 @@ function getTopBalances(guildId, limit = 10) {
   return topBalancesStmt.all(guildId, limit);
 }
 
+const transferTx = db.transaction((guildId, fromId, toId, amount) => {
+  ensureUser(guildId, fromId);
+  ensureUser(guildId, toId);
+  addBalanceStmt.run({ guildId, userId: fromId, amount: -amount });
+  addBalanceStmt.run({ guildId, userId: toId, amount });
+});
+
+function transfer(guildId, fromId, toId, amount) {
+  transferTx(guildId, fromId, toId, amount);
+}
+
 module.exports = {
   ensureUser,
   getBalance,
@@ -81,4 +92,5 @@ module.exports = {
   getLastWork,
   setLastWork,
   getTopBalances,
+  transfer,
 };

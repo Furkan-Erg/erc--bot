@@ -10,10 +10,11 @@ if (!fs.existsSync(dataDir)) {
 const db = new Database(path.join(dataDir, 'bot.sqlite'));
 db.pragma('journal_mode = WAL');
 
-const migrationSql = fs.readFileSync(
-  path.join(__dirname, 'migrations', '001_init.sql'),
-  'utf8'
-);
-db.exec(migrationSql);
+const migrationsDir = path.join(__dirname, 'migrations');
+const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+
+for (const file of migrationFiles) {
+  db.exec(fs.readFileSync(path.join(migrationsDir, file), 'utf8'));
+}
 
 module.exports = db;
