@@ -22,6 +22,18 @@ function getState(guildId) {
   return guildStates.get(guildId);
 }
 
+// @discordjs/voice içindeki ağ aşamaları (NetworkingStatusCode dışa aktarılmadığı için elle eşleniyor).
+const AG_ASAMALARI = ['ws-aciliyor', 'kimlik-dogrulama', 'udp-el-sikisma', 'protokol-secimi', 'hazir', 'yeniden-baglaniyor', 'kapali'];
+
+// Bağlantı takılınca hangi adımda kaldığını ve hangi ses sunucusuna gidildiğini gösterir.
+function agAsamasi(connection) {
+  const networking = connection.state?.networking;
+  const durum = networking?.state;
+  if (!durum) return 'ağ katmanı hiç başlamadı (ses sunucusu bilgisi gelmedi)';
+  const asama = AG_ASAMALARI[durum.code] ?? durum.code;
+  return `ağ aşaması: ${asama}, ses sunucusu: ${durum.connectionOptions?.endpoint ?? 'bilinmiyor'}`;
+}
+
 // Panel mesajı hep en altta dursun diye şarkı değişince eskisi silinip yenisi gönderiliyor.
 async function sendPanel(state) {
   const eski = state.panelMessage;
@@ -96,7 +108,7 @@ async function playNext(guildId) {
   try {
     await entersState(state.connection, VoiceConnectionStatus.Ready, 20_000);
   } catch (err) {
-    logger.error(`Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status})`, err);
+    logger.error(`Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`, err);
     state.textChannel
       .send('❌ Sesli kanala bağlanamadım. Kanalda **Bağlan** ve **Konuş** iznim var mı, kanal dolu mu bir bak.')
       .catch(() => {});
