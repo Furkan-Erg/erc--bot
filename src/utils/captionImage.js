@@ -1,7 +1,8 @@
 const { createCanvas, loadImage } = require('canvas');
 
 function drawImpactText(ctx, text, x, y, maxWidth) {
-  ctx.font = `${Math.floor(maxWidth / 12)}px Impact, sans-serif`;
+  // Impact sadece Windows'ta var; Linux/Docker'da font bulunamazsa canvas yazıyı boş kutu olarak çizer.
+  ctx.font = `bold ${Math.floor(maxWidth / 12)}px Impact, "DejaVu Sans", "Noto Sans", sans-serif`;
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.strokeStyle = '#000';

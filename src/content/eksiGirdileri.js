@@ -4,6 +4,16 @@ const ACILIS = [
   'yıllardır bunu bekliyordum',
   'şu an duygusalım, biraz sabredin',
   'gece 3\'te bu başlığı açan adamı tebrik ediyorum',
+  'gündem olunca herkes bir anda uzman kesildi',
+  'bu başlık daha önce niye açılmamış anlamıyorum',
+  '2011 yılından beri sözlükteyim, ilk defa bir konu bu kadar sarstı beni',
+  'kapak konusu olmuş, artık ciddiyim',
+  'sabah işe giderken düşündüm, akşam eve gelince yazayım dedim',
+  'bu entry\'yi okuyan herkesle helalleşiyorum',
+  'annem "yine mi sözlük" dedi ama yazmadan duramadım',
+  'başlığı görür görmez ekran görüntüsü aldım',
+  'uzun zamandır bu kadar konuşulan bir şey olmamıştı',
+  'bunu 1 favoriyle bitirmem, biliyorum ama yazacağım',
 ];
 
 const GOVDE = [
@@ -15,6 +25,18 @@ const GOVDE = [
   'bence bu konuda kimse benim kadar deneyimli değil',
   'üç kere okudum hâlâ inanamıyorum',
   'keşke daha önce fark etseydim',
+  'sözlükte yazarken saatlerin nasıl geçtiğini anlamıyorum',
+  'bu konuda uzman değilim ama madem başlık açılmış, ben de yazayım dedim',
+  'iş yerinde bile bunu konuştuk, herkes aynı fikirde',
+  'geçen hafta da böyle bir şey olmuştu, kimse hatırlamıyor ama',
+  'bir dahaki sefere daha dikkatli olurum artık',
+  'sözlük dışında kimseye anlatamıyorum bunu, anlamıyorlar',
+  'yazarken bile utanıyorum ama gerçek bu',
+  'bu başlığa entry girmek bile bir nevi terapi oldu benim için',
+  'kapatmayın böyle başlıkları, burası hâlâ nefes alıyor',
+  'gündemi kaçırmışım, şimdi yetişmeye çalışıyorum',
+  '3 gündür bunu düşünüyorum, artık paylaşmam lazımdı',
+  'kimse sormadı ama ben yine de anlatayım',
 ];
 
 const KAPANIS = [
@@ -23,6 +45,11 @@ const KAPANIS = [
   'kısacası hayat böyle bir şey',
   'neyse, iyi geceler millet',
   'bu başlığa daha sonra devam edeceğim',
+  'edit: imla hatası için özür dilerim, telefondan yazdım',
+  'yarın devamını getiririm, şimdilik bu kadar',
+  'bu entry\'yi silmem, ne olursa olsun',
+  'sözlük olmasa bunu kimseye anlatamazdım',
+  'okuyan herkese iyi diyaloglar dilerim',
 ];
 
 module.exports = { ACILIS, GOVDE, KAPANIS };

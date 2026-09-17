@@ -69,6 +69,10 @@ function createState(guild, voiceChannel, textChannel) {
   player.on(AudioPlayerStatus.Idle, () => playNext(guild.id));
   player.on('error', (err) => {
     logger.error('Ses oynatıcı hatası', err);
+    const failedTitle = state.current?.title;
+    if (failedTitle) {
+      textChannel.send(`⚠️ **${failedTitle}** çalınırken hata oldu (${err.message}), sıradakine geçiyorum.`).catch(() => {});
+    }
     playNext(guild.id);
   });
 
