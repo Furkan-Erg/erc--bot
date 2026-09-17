@@ -3,6 +3,7 @@ const { getInfo, getPlaylist, MAX_PLAYLIST } = require('../../music/ytdlp');
 const ytSearch = require('yt-search');
 const { errorEmbed, successEmbed, infoEmbed } = require('../../utils/embeds');
 const musicManager = require('../../music/musicManager');
+const logger = require('../../utils/logger');
 
 function isYoutubeUrl(str) {
   return /^(https?:\/\/)?(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i.test(str);
@@ -43,10 +44,14 @@ module.exports = {
     const query = interaction.options.getString('sarki', true);
     await interaction.deferReply();
 
+    logger.info(`!play — sunucu: ${interaction.guild?.name}, kullanıcı: ${interaction.user.tag}, sorgu: "${query}"`);
+
     let tracks;
     try {
       tracks = await resolveTracks(query);
-    } catch {
+    } catch (err) {
+      // Hata yutulunca "çekemedim" mesajının sebebi loglarda görünmüyordu.
+      logger.error(`Şarkı çözümlenemedi (sorgu: "${query}")`, err);
       await interaction.editReply({ embeds: [errorEmbed('Şarkıyı bulamadım ya da çekemedim, başka bir şey dene.')] });
       return;
     }
@@ -57,12 +62,20 @@ module.exports = {
     }
 
     const requestedBy = interaction.user.tag;
-    const startedImmediately = musicManager.enqueueMany(
-      interaction.guild,
-      voiceChannel,
-      interaction.channel,
-      tracks.map((t) => ({ ...t, requestedBy }))
-    );
+    let startedImmediately;
+    try {
+      startedImmediately = musicManager.enqueueMany(
+        interaction.guild,
+        voiceChannel,
+        interaction.channel,
+        tracks.map((t) => ({ ...t, requestedBy }))
+      );
+    } catch (err) {
+      // Sesli kanala bağlanma hatası (izin, bölge, kapasite) buradan görünür olsun.
+      logger.error(`Sesli kanala bağlanılamadı (#${voiceChannel.name}, sunucu: ${interaction.guild?.name})`, err);
+      await interaction.editReply({ embeds: [errorEmbed('Sesli kanala bağlanamadım. İznim var mı bir bak.')] });
+      return;
+    }
 
     if (tracks.length > 1) {
       await interaction.editReply({

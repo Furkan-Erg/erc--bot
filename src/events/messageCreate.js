@@ -105,6 +105,14 @@ module.exports = {
   async execute(message, client) {
     if (message.author.bot) return;
 
+    // DEBUG_COMMANDS=1 iken, mesajın bota ulaşıp ulaşmadığını görmek için her mesaj loglanır.
+    if (process.env.DEBUG_COMMANDS) {
+      logger.info(
+        `Mesaj geldi — sunucu: ${message.guild?.name ?? 'DM'}, kanal: #${message.channel?.name}, ` +
+          `kullanıcı: ${message.author.tag}, içerik uzunluğu: ${message.content.length}`
+      );
+    }
+
     const isCommand = message.content.startsWith(config.prefix);
 
     if (message.guild) {
