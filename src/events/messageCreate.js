@@ -126,7 +126,17 @@ module.exports = {
     const rawArgs = spaceIndex === -1 ? '' : withoutPrefix.slice(spaceIndex + 1);
 
     const command = client.commands.get(commandName);
-    if (!command) return;
+    if (!command) {
+      // DEBUG_COMMANDS=1 ile, tanınmayan komutlar loglanır (sunucu/kanal ayıklaması için).
+      if (process.env.DEBUG_COMMANDS) {
+        logger.warn(`Bilinmeyen komut "${commandName}" — sunucu: ${message.guild?.name}, kanal: #${message.channel?.name}`);
+      }
+      return;
+    }
+
+    if (process.env.DEBUG_COMMANDS) {
+      logger.info(`Komut "${commandName}" — sunucu: ${message.guild?.name}, kanal: #${message.channel?.name}, kullanıcı: ${message.author.tag}`);
+    }
 
     const optionsMeta = command.data.toJSON().options || [];
     const values = parseOptions(rawArgs, optionsMeta, message);

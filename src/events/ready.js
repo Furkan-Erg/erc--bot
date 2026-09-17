@@ -43,6 +43,9 @@ module.exports = {
   once: true,
   execute(client) {
     logger.info(`Logged in as ${client.user.tag}`);
+    // Botun hangi sunucularda olduğunu görmek, "şu sunucuda çalışmıyor" tipi sorunları hızlı ayıklamayı sağlıyor.
+    const sunucular = client.guilds.cache.map((g) => `${g.name} (${g.id})`);
+    logger.info(`Bulunduğu sunucular (${sunucular.length}): ${sunucular.join(', ') || 'yok'}`);
     client.user.setActivity(`${config.prefix}help`);
     startReminderPolling(client);
     startInflationScheduler();

@@ -10,6 +10,7 @@ const {
   StreamType,
 } = require('@discordjs/voice');
 const ytdlp = require('./ytdlp');
+const panel = require('./panel');
 const logger = require('../utils/logger');
 
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
@@ -21,11 +22,39 @@ function getState(guildId) {
   return guildStates.get(guildId);
 }
 
+// Panel mesajı hep en altta dursun diye şarkı değişince eskisi silinip yenisi gönderiliyor.
+async function sendPanel(state) {
+  const eski = state.panelMessage;
+  state.panelMessage = null;
+  if (eski) await eski.delete().catch(() => {});
+  if (!state.current) return;
+
+  try {
+    state.panelMessage = await state.textChannel.send(panel.build(state));
+  } catch (err) {
+    logger.error('Müzik paneli gönderilemedi', err);
+  }
+}
+
+// Duraklatma, döngü, karıştırma gibi durum değişiklikleri panelde yerinde güncelleniyor.
+async function refreshPanel(guildId) {
+  const state = getState(guildId);
+  if (!state?.panelMessage || !state.current) return;
+  await state.panelMessage.edit(panel.build(state)).catch(() => {});
+}
+
+function removePanel(state) {
+  const mesaj = state.panelMessage;
+  state.panelMessage = null;
+  if (mesaj) mesaj.delete().catch(() => {});
+}
+
 function destroyState(guildId) {
   const state = guildStates.get(guildId);
   if (!state) return;
   guildStates.delete(guildId);
   clearTimeout(state.leaveTimer);
+  removePanel(state);
   try {
     state.killStream?.();
     state.player.stop(true);
@@ -75,6 +104,7 @@ async function playNext(guildId) {
     state.killStream = kill;
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
     state.player.play(resource);
+    sendPanel(state);
   } catch (err) {
     logger.error('Şarkı çalınırken hata oluştu', err);
     next.failed = true;
@@ -102,6 +132,7 @@ function createState(guild, voiceChannel, textChannel) {
     loop: 'kapali',
     skipRequested: false,
     leaveTimer: null,
+    panelMessage: null,
   };
 
   player.on(AudioPlayerStatus.Idle, () => playNext(guild.id));
@@ -153,23 +184,30 @@ function skip(guildId) {
   state.player.stop();
 }
 
+// Oynatıcı zaten Idle'sa player.stop() hiçbir olay tetiklemiyor ve bot kanalda asılı kalıyordu;
+// bu yüzden kuyruğun boşalmasını beklemeden bağlantıyı doğrudan kapatıyoruz.
 function stop(guildId) {
   const state = getState(guildId);
   if (!state) return;
   state.queue = [];
   state.loop = 'kapali';
   state.skipRequested = true;
-  state.player.stop();
+  state.current = null;
+  destroyState(guildId);
 }
 
 function pause(guildId) {
   const state = getState(guildId);
-  if (state) state.player.pause();
+  if (!state) return;
+  state.player.pause();
+  refreshPanel(guildId);
 }
 
 function resume(guildId) {
   const state = getState(guildId);
-  if (state) state.player.unpause();
+  if (!state) return;
+  state.player.unpause();
+  refreshPanel(guildId);
 }
 
 function setLoop(guildId, mod) {
@@ -177,6 +215,7 @@ function setLoop(guildId, mod) {
   if (!state) return null;
   const yeniMod = mod ?? LOOP_MODLARI[(LOOP_MODLARI.indexOf(state.loop) + 1) % LOOP_MODLARI.length];
   state.loop = yeniMod;
+  refreshPanel(guildId);
   return yeniMod;
 }
 
@@ -188,6 +227,7 @@ function shuffle(guildId) {
     const j = Math.floor(Math.random() * (i + 1));
     [q[i], q[j]] = [q[j], q[i]];
   }
+  refreshPanel(guildId);
   return q.length;
 }
 
@@ -233,4 +273,5 @@ module.exports = {
   setLoop,
   shuffle,
   checkEmptyChannel,
+  refreshPanel,
 };
