@@ -4,8 +4,8 @@ const { infoEmbed } = require('../../utils/embeds');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('userinfo')
-    .setDescription('Show info about a member.')
-    .addUserOption((opt) => opt.setName('user').setDescription('Member to look up').setRequired(false)),
+    .setDescription('Bir üye hakkında bilgi göster.')
+    .addUserOption((opt) => opt.setName('user').setDescription('Bakılacak üye').setRequired(false)),
   async execute(interaction) {
     const user = interaction.options.getUser('user') || interaction.user;
     const member = await interaction.guild.members.fetch(user.id).catch(() => null);
@@ -14,11 +14,11 @@ module.exports = {
       .setTitle(user.tag)
       .setThumbnail(user.displayAvatarURL())
       .addFields(
-        { name: 'Account created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:F>` },
+        { name: 'Hesap oluşturma', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:F>` },
         member
-          ? { name: 'Joined server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>` }
-          : { name: 'Joined server', value: 'Not in this server' },
-        member ? { name: 'Roles', value: member.roles.cache.map((r) => r.toString()).join(' ') || 'None' } : { name: 'Roles', value: 'N/A' }
+          ? { name: 'Sunucuya katılma', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>` }
+          : { name: 'Sunucuya katılma', value: 'Bu sunucuda değil' },
+        member ? { name: 'Roller', value: member.roles.cache.map((r) => r.toString()).join(' ') || 'Yok' } : { name: 'Roller', value: 'Yok' }
       );
 
     await interaction.reply({ embeds: [embed] });

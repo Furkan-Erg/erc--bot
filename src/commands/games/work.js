@@ -2,23 +2,14 @@ const { SlashCommandBuilder } = require('discord.js');
 const economyRepo = require('../../database/repositories/economyRepo');
 const { successEmbed, warnEmbed } = require('../../utils/embeds');
 const { getRemainingCooldown, formatDuration } = require('../../utils/cooldowns');
+const { JOBS } = require('../../content/jobs');
 
 const COOLDOWN_MS = 60 * 60 * 1000;
 const MIN_REWARD = 20;
 const MAX_REWARD = 80;
 
-const JOBS = [
-  'debugged a production incident for',
-  'walked a dog for',
-  'delivered pizza for',
-  'moderated a chaotic voice channel for',
-  'wrote unit tests for',
-  'fixed a merge conflict for',
-  'streamed a boring tutorial for',
-];
-
 module.exports = {
-  data: new SlashCommandBuilder().setName('work').setDescription('Work a small job for some coins.'),
+  data: new SlashCommandBuilder().setName('work').setDescription('Ufak bir iş yap, birkaç TL kazan.'),
   async execute(interaction) {
     const { guildId, user } = interaction;
     const lastWork = economyRepo.getLastWork(guildId, user.id);
@@ -26,7 +17,7 @@ module.exports = {
 
     if (remaining > 0) {
       await interaction.reply({
-        embeds: [warnEmbed(`⏳ You're tired. Rest for **${formatDuration(remaining)}** before working again.`)],
+        embeds: [warnEmbed(`⏳ Yoruldun be dayı, biraz dinlen. **${formatDuration(remaining)}** sonra tekrar çalışabilirsin.`)],
         ephemeral: true,
       });
       return;
@@ -39,7 +30,7 @@ module.exports = {
     const balance = economyRepo.addBalance(guildId, user.id, reward);
 
     await interaction.reply({
-      embeds: [successEmbed(`💼 You ${job} a stranger and earned **${reward}** coins! Balance: **${balance}**.`)],
+      embeds: [successEmbed(`💼 ${job} ve **${reward}** TL kazandın! Bakiye: **${balance}** TL.`)],
     });
   },
 };

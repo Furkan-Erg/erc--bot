@@ -21,11 +21,11 @@ function parseDuration(input) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('remind')
-    .setDescription('Set a reminder.')
+    .setDescription('Bir hatırlatıcı kur.')
     .addStringOption((opt) =>
-      opt.setName('duration').setDescription('e.g. 10m, 1h30m, 2d').setRequired(true)
+      opt.setName('duration').setDescription('örn. 10m, 1h30m, 2d').setRequired(true)
     )
-    .addStringOption((opt) => opt.setName('message').setDescription('What to remind you about').setRequired(true)),
+    .addStringOption((opt) => opt.setName('message').setDescription('Ne hakkında hatırlatılacaksın').setRequired(true)),
   async execute(interaction) {
     const durationInput = interaction.options.getString('duration', true);
     const message = interaction.options.getString('message', true);
@@ -33,7 +33,7 @@ module.exports = {
     const durationMs = parseDuration(durationInput);
     if (!durationMs || durationMs <= 0) {
       await interaction.reply({
-        embeds: [errorEmbed('Invalid duration. Use a format like `10m`, `1h30m`, or `2d`.')],
+        embeds: [errorEmbed('Geçersiz süre. `10m`, `1h30m` ya da `2d` gibi bir format kullan.')],
         ephemeral: true,
       });
       return;
@@ -43,7 +43,7 @@ module.exports = {
     remindersRepo.createReminder(interaction.user.id, interaction.channelId, message, remindAt);
 
     await interaction.reply({
-      embeds: [successEmbed(`⏰ Got it, I'll remind you <t:${Math.floor(remindAt / 1000)}:R>.`)],
+      embeds: [successEmbed(`⏰ Tamamdır, <t:${Math.floor(remindAt / 1000)}:R> hatırlatacağım.`)],
     });
   },
 };

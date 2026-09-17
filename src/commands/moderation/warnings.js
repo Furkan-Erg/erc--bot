@@ -6,11 +6,11 @@ const { isModerator } = require('../../utils/permissions');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warnings')
-    .setDescription("View a member's warning history.")
-    .addUserOption((opt) => opt.setName('user').setDescription('Member to check').setRequired(true)),
+    .setDescription('Bir üyenin uyarı geçmişini göster.')
+    .addUserOption((opt) => opt.setName('user').setDescription('Kontrol edilecek üye').setRequired(true)),
   async execute(interaction) {
     if (!isModerator(interaction)) {
-      await interaction.reply({ embeds: [errorEmbed('You need moderator permissions to use this.')], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed('Bu iş moderatör yetkisi ister, senin harcın değil.')], ephemeral: true });
       return;
     }
 
@@ -18,15 +18,15 @@ module.exports = {
     const warnings = warningsRepo.getWarnings(interaction.guildId, user.id);
 
     if (warnings.length === 0) {
-      await interaction.reply({ embeds: [infoEmbed(`**${user.tag}** has no warnings.`)] });
+      await interaction.reply({ embeds: [infoEmbed(`**${user.tag}** temiz, hiç uyarısı yok.`)] });
       return;
     }
 
     const lines = warnings
       .slice(0, 10)
-      .map((w, i) => `**${i + 1}.** ${w.reason} — <t:${Math.floor(w.created_at / 1000)}:R> (by <@${w.moderator_id}>)`);
+      .map((w, i) => `**${i + 1}.** ${w.reason} — <t:${Math.floor(w.created_at / 1000)}:R> (veren: <@${w.moderator_id}>)`);
 
-    const embed = infoEmbed(lines.join('\n')).setTitle(`Warnings for ${user.tag} (${warnings.length} total)`);
+    const embed = infoEmbed(lines.join('\n')).setTitle(`${user.tag} için uyarılar (toplam ${warnings.length})`);
     await interaction.reply({ embeds: [embed] });
   },
 };

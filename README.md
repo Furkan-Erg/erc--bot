@@ -1,77 +1,80 @@
 # ercü-bot
 
-A fun Discord bot with memes, mini-games/economy, and moderation utilities, built with discord.js v14 and SQLite. Commands are triggered with a text prefix (default `!`), not Discord's native slash-command UI.
+Memeler, mini oyunlar/ekonomi, YouTube'dan müzik ve moderasyon araçlarıyla dolu, Türkçe ve esnaf/argo esprili bir Discord botu. discord.js v14 ve SQLite ile yazıldı. Komutlar Discord'un slash-komut arayüzü yerine metin öneki (varsayılan `!`) ile çalışır.
 
-## Features
+## Özellikler
 
 - **Meme:** `!meme`, `!caption`
-- **Moderation/Utility:** `!kick`, `!ban`, `!warn`, `!warnings`, `!purge`, `!poll`, `!remind`, `!ping`, `!userinfo`, `!serverinfo`, `!help`
-- **Games/Economy:** `!balance`, `!daily`, `!work`, `!slots`, `!blackjack`, `!trivia`, `!leaderboard`
-- Welcome messages on member join (if `WELCOME_CHANNEL_ID` is set)
+- **Eğlence:** `!sallama`, `!sok`, `!capsle`, `!eksi`
+- **Müzik:** `!play`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!np`
+- **Moderasyon/Yardımcı:** `!warn`, `!warnings`, `!poll`, `!remind`, `!ping`, `!userinfo`, `!serverinfo`, `!help`
+- **Oyunlar/Ekonomi:** `!balance`, `!daily`, `!work`, `!slots`, `!blackjack`, `!trivia`, `!leaderboard`
+- Bir üye katıldığında karşılama mesajı (`WELCOME_CHANNEL_ID` ayarlıysa)
 
-Run `!help` in your server for the full list with usage syntax. Arguments are positional: tag users with `@`, wrap multi-word text in `"quotes"` when it's not the last argument (e.g. `!warn @user "being disruptive"`); the last text argument (like a `!poll` option or `!remind` message) can skip quotes and just be the rest of the message.
+Sunucunda tüm komutları ve kullanım şeklini görmek için `!help` yaz. Argümanlar konuma göre sıralanır: kullanıcıları `@` ile etiketle, çok kelimeli metinleri son argüman değilse `"tırnak içine"` al (örn. `!warn @kullanici "kurallara uymuyor"`); son metin argümanı (örn. `!poll` seçeneği veya `!remind` mesajı) tırnak gerektirmeden mesajın geri kalanı olarak alınır.
 
-## 1. Create the Discord application
+## 1. Discord uygulamasını oluştur
 
-1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create a new application.
-2. Under **Bot**, create a bot user, copy the **token** (this is `DISCORD_TOKEN`).
-3. Under **Bot → Privileged Gateway Intents**, enable **Server Members Intent** (welcome messages, member lookups) and **Message Content Intent** (required to read prefix commands like `!meme`).
-4. Under **OAuth2 → General**, copy the **Application ID** (this is `CLIENT_ID`, kept for reference/future use).
-5. Under **OAuth2 → URL Generator**, select scope `bot` (no need for `applications.commands` since there are no slash commands), and permissions: Kick Members, Ban Members, Moderate Members, Manage Messages, Send Messages, Embed Links, Attach Files, Add Reactions, Read Message History. Use the generated URL to invite the bot to your server.
-6. Copy your server's ID (enable Developer Mode in Discord, right-click your server icon → Copy Server ID) — this is `GUILD_ID`.
+1. [Discord Developer Portal](https://discord.com/developers/applications)'a git ve yeni bir uygulama oluştur.
+2. **Bot** sekmesinde bir bot kullanıcısı oluştur, **token**'ı kopyala (bu `DISCORD_TOKEN`).
+3. **Bot → Privileged Gateway Intents** altında **Server Members Intent** (karşılama mesajları, üye aramaları) ve **Message Content Intent**'i (önekli komutları okumak için zorunlu, örn. `!meme`) etkinleştir.
+4. **OAuth2 → General** altında **Application ID**'yi kopyala (bu `CLIENT_ID`, referans/ileride kullanım için tutulur).
+5. **OAuth2 → URL Generator** altında `bot` scope'unu seç (slash komut olmadığı için `applications.commands` gerekmez), izinler: Moderate Members, Manage Messages, Send Messages, Embed Links, Attach Files, Add Reactions, Read Message History, Connect, Speak (son ikisi `!play` müzik komutu için sesli kanala bağlanabilmek adına gerekli). Oluşan URL ile botu sunucuna davet et.
+6. Sunucunun ID'sini kopyala (Discord'da Geliştirici Modunu aç, sunucu ikonuna sağ tıkla → Sunucu ID'sini Kopyala) — bu `GUILD_ID`.
 
-## 2. Configure environment variables
+## 2. Ortam değişkenlerini ayarla
 
-Copy `.env.example` to `.env` and fill in the values:
+`.env.example` dosyasını `.env` olarak kopyala ve değerleri doldur:
 
 ```
 DISCORD_TOKEN=your-bot-token
 CLIENT_ID=your-application-id
 GUILD_ID=your-server-id
-WELCOME_CHANNEL_ID=          # optional, channel ID for welcome messages
-MOD_ROLE_ID=                 # optional, role ID that also counts as a moderator
-PREFIX=!                     # command prefix
+WELCOME_CHANNEL_ID=          # opsiyonel, karşılama mesajları için kanal ID'si
+MOD_ROLE_ID=                 # opsiyonel, moderatör sayılacak ek rol ID'si
+PREFIX=!                     # komut öneki
 ```
 
-## 3. Run locally (before deploying)
+## 3. Yerelde çalıştır (deploy etmeden önce)
 
-`better-sqlite3` and `canvas` are native modules — they need Python + a C++ toolchain to build from source if no prebuilt binary matches your Node version. The easiest path on Windows is to test with Docker directly (it already has everything it needs, see step 4) instead of running bare `node` on the host:
+`better-sqlite3` ve `canvas` native modüllerdir — Node sürümünle eşleşen hazır bir binary yoksa kaynaktan derlenmek için Python + bir C++ toolchain isterler. Windows'ta en kolay yol, host üzerinde çıplak `node` çalıştırmak yerine doğrudan Docker ile test etmektir (ihtiyacı olan her şey zaten kurulu, bkz. adım 4):
 
 ```bash
 docker compose build
 docker compose up
 ```
 
-If you'd rather run it directly with plain Node (Linux/macOS, or Windows with Python 3 + Visual Studio Build Tools installed):
+Doğrudan Node ile çalıştırmayı tercih ediyorsan (Linux/macOS, ya da Python 3 + Visual Studio Build Tools kurulu Windows):
 
 ```bash
 npm install
-npm start   # or: node src/index.js
+npm start   # ya da: node src/index.js
 ```
 
-Confirm the bot logs in and shows "Logged in as ..." in the console, and appears Online in your server. Test each command category live in Discord: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!warn @user reason`, `!purge 10`, `!poll "question" "a" "b"`, `!remind 10m message`, `!help`, etc.
+Konsolda "Logged in as ..." çıktığını ve botun sunucunda Çevrimiçi göründüğünü doğrula. Her komut kategorisini Discord'da canlı test et: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!sallama <soru>`, `!sok @kullanici`, `!capsle <resim_url>`, `!eksi <baslik>`, `!warn @kullanici sebep`, `!poll "soru" "a" "b"`, `!remind 10m mesaj`, `!help`. Müzik komutlarını test etmek için önce bir sesli kanala gir, sonra `!play <şarkı adı ya da YouTube linki>`, `!queue`, `!skip`, `!pause`, `!resume`, `!np`, `!stop` sırasıyla dene.
 
-## 4. Deploy on your VPS with Docker
+## 4. VPS'ine Docker ile deploy et
 
-The VPS already has Docker, docker-compose, and nginx — this bot doesn't need nginx or any exposed port, since it only makes outbound connections to Discord's gateway.
+VPS'te zaten Docker, docker-compose ve nginx kurulu — bu bot nginx ya da dışa açık bir port istemiyor, sadece Discord'un gateway'ine giden bağlantılar kuruyor.
 
 ```bash
-# on the VPS, inside the project directory (after copying the repo + your real .env there)
+# VPS'te, proje dizini içinde (repoyu + gerçek .env dosyanı oraya kopyaladıktan sonra)
 docker-compose up -d --build
-docker-compose logs -f bot        # confirm clean startup
+docker-compose logs -f bot        # temiz başladığını doğrula
 ```
 
-The SQLite database (`/app/data/bot.sqlite`) lives on the named `bot-data` Docker volume, so balances/warnings/reminders survive container rebuilds (`docker-compose up --build`) and VPS reboots. `restart: always` keeps the bot running through crashes and reboots.
+SQLite veritabanı (`/app/data/bot.sqlite`) `bot-data` adlı Docker volume'unda tutulur, bu yüzden bakiyeler/uyarılar/hatırlatıcılar container yeniden derlense (`docker-compose up --build`) ya da VPS yeniden başlasa da kalıcı olur. `restart: always` çökmelerde ve yeniden başlatmalarda botu ayakta tutar.
 
-To update the bot after code changes:
+Kod değişikliğinden sonra botu güncellemek için:
 
 ```bash
-git pull   # or re-upload files
+git pull   # ya da dosyaları yeniden yükle
 docker-compose up -d --build
 ```
 
-## Notes
+## Notlar
 
-- Never commit `.env` — it's already gitignored.
-- If the Alpine-based Docker build for `canvas` (used by `!caption`) is slow or fails on your VPS, switch the Dockerfile's base image to `node:20-bookworm-slim` and replace the `apk add` line with `apt-get install -y python3 make g++ libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev`.
-- Ephemeral (private) replies don't exist for prefix commands — every reply is a normal, visible channel message.
+- `.env` dosyasını asla commit'leme — zaten gitignore'da.
+- `canvas` (`!caption`, `!capsle` tarafından kullanılıyor) için Alpine tabanlı Docker build'i VPS'inde yavaş çalışıyor ya da başarısız oluyorsa, Dockerfile'ın base image'ını `node:20-bookworm-slim` yap ve `apk add` satırını `apt-get install -y python3 make g++ libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev` ile değiştir.
+- `!play` müzik komutu ses dönüştürme için `ffmpeg-static` paketinin indirdiği ffmpeg'i kullanır — ayrıca sistemde ffmpeg kurulu olmasına gerek yok.
+- Önekli komutlarda ephemeral (özel/gizli) yanıt diye bir şey yok — her yanıt normal, herkese görünen bir kanal mesajıdır.

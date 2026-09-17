@@ -41,15 +41,15 @@ function formatHand(hand) {
 
 function buildRow(disabled = false) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('hit').setLabel('Hit').setStyle(ButtonStyle.Primary).setDisabled(disabled),
-    new ButtonBuilder().setCustomId('stand').setLabel('Stand').setStyle(ButtonStyle.Secondary).setDisabled(disabled)
+    new ButtonBuilder().setCustomId('hit').setLabel('Çek').setStyle(ButtonStyle.Primary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId('stand').setLabel('Dur').setStyle(ButtonStyle.Secondary).setDisabled(disabled)
   );
 }
 
 function buildEmbed({ player, dealer, revealDealer, status }) {
   const dealerDisplay = revealDealer ? `${formatHand(dealer)} (${handValue(dealer)})` : `${dealer[0].rank}${dealer[0].suit} ??`;
   const embed = infoEmbed(
-    `**Dealer:** ${dealerDisplay}\n**You:** ${formatHand(player)} (${handValue(player)})\n\n${status}`
+    `**Kasa:** ${dealerDisplay}\n**Sen:** ${formatHand(player)} (${handValue(player)})\n\n${status}`
   ).setTitle('🃏 Blackjack');
   return embed;
 }
@@ -57,15 +57,15 @@ function buildEmbed({ player, dealer, revealDealer, status }) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('blackjack')
-    .setDescription('Play a hand of blackjack against the dealer.')
-    .addIntegerOption((opt) => opt.setName('bet').setDescription('Amount to bet').setMinValue(1).setRequired(true)),
+    .setDescription('Kasaya karşı bir el blackjack oyna.')
+    .addIntegerOption((opt) => opt.setName('bet').setDescription('Bahis miktarı').setMinValue(1).setRequired(true)),
   async execute(interaction) {
     const { guildId, user } = interaction;
     const bet = interaction.options.getInteger('bet', true);
     const balance = economyRepo.getBalance(guildId, user.id);
 
     if (bet > balance) {
-      await interaction.reply({ embeds: [errorEmbed(`You only have **${balance}** coins.`)], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed(`Cebinde sadece **${balance}** TL var, o kadar bahis oynayamazsın.`)], ephemeral: true });
       return;
     }
 
@@ -80,14 +80,14 @@ module.exports = {
       economyRepo.addBalance(guildId, user.id, winnings);
       await interaction.reply({
         embeds: [
-          buildEmbed({ player, dealer, revealDealer: true, status: `🎉 Blackjack! You win **${winnings}** coins.` }),
+          buildEmbed({ player, dealer, revealDealer: true, status: `🎉 Blackjack! **${winnings}** TL kazandın.` }),
         ],
       });
       return;
     }
 
     const message = await interaction.reply({
-      embeds: [buildEmbed({ player, dealer, revealDealer: false, status: 'Hit or stand?' })],
+      embeds: [buildEmbed({ player, dealer, revealDealer: false, status: 'Çek mi, dur mu?' })],
       components: [buildRow()],
       fetchReply: true,
     });
@@ -116,12 +116,12 @@ module.exports = {
         const total = handValue(player);
 
         if (total > 21) {
-          await finish(buttonInteraction, `💥 Bust! You lost **${bet}** coins.`, -bet);
+          await finish(buttonInteraction, `💥 Battın! **${bet}** TL gitti.`, -bet);
           return;
         }
 
         await buttonInteraction.update({
-          embeds: [buildEmbed({ player, dealer, revealDealer: false, status: 'Hit or stand?' })],
+          embeds: [buildEmbed({ player, dealer, revealDealer: false, status: 'Çek mi, dur mu?' })],
           components: [buildRow()],
         });
         return;
@@ -136,11 +136,11 @@ module.exports = {
       const dealerTotal = handValue(dealer);
 
       if (dealerTotal > 21 || playerTotal > dealerTotal) {
-        await finish(buttonInteraction, `🎉 You win **${bet}** coins!`, bet);
+        await finish(buttonInteraction, `🎉 Kazandın! **${bet}** TL cebine girdi.`, bet);
       } else if (playerTotal === dealerTotal) {
-        await finish(buttonInteraction, "🤝 Push — it's a tie, bet returned.", 0);
+        await finish(buttonInteraction, '🤝 Berabere — bahis iade edildi.', 0);
       } else {
-        await finish(buttonInteraction, `😢 Dealer wins. You lost **${bet}** coins.`, -bet);
+        await finish(buttonInteraction, `😢 Kasa kazandı. **${bet}** TL gitti.`, -bet);
       }
     });
 
@@ -149,7 +149,7 @@ module.exports = {
       economyRepo.addBalance(guildId, user.id, -bet);
       await interaction
         .editReply({
-          embeds: [buildEmbed({ player, dealer, revealDealer: true, status: `⌛ Timed out. You lost **${bet}** coins.` })],
+          embeds: [buildEmbed({ player, dealer, revealDealer: true, status: `⌛ Süre doldu. **${bet}** TL gitti.` })],
           components: [buildRow(true)],
         })
         .catch(() => {});

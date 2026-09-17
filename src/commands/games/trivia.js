@@ -27,20 +27,20 @@ function shuffle(arr) {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('trivia').setDescription('Answer a trivia question for coins.'),
+  data: new SlashCommandBuilder().setName('trivia').setDescription('Bir bilgi yarışması sorusu cevapla, TL kazan.'),
   async execute(interaction) {
     await interaction.deferReply();
 
     const res = await fetch('https://opentdb.com/api.php?amount=1&type=multiple');
     if (!res.ok) {
-      await interaction.editReply({ embeds: [errorEmbed('Could not fetch a trivia question right now.')] });
+      await interaction.editReply({ embeds: [errorEmbed('Şu an soru çekemedim, biraz sonra tekrar dene.')] });
       return;
     }
 
     const data = await res.json();
     const question = data?.results?.[0];
     if (!question) {
-      await interaction.editReply({ embeds: [errorEmbed('No trivia question available, try again.')] });
+      await interaction.editReply({ embeds: [errorEmbed('Soru bulunamadı, tekrar dener misin?')] });
       return;
     }
 
@@ -54,7 +54,7 @@ module.exports = {
     );
 
     const answerList = answers.map((a, i) => `**${LETTERS[i]}.** ${decodeHtml(a)}`).join('\n');
-    const embed = infoEmbed(`${decodeHtml(question.question)}\n\n${answerList}`).setTitle(
+    const embed = infoEmbed(`${decodeHtml(question.question)}\n\n${answerList}\n\n*(Sorular İngilizce geliyor, kusura bakma dayı — kaynak API başka çare yok.)*`).setTitle(
       `🧠 ${decodeHtml(question.category)} (${question.difficulty})`
     );
 
@@ -76,8 +76,8 @@ module.exports = {
       }
 
       const resultEmbed = correct
-        ? successEmbed(`✅ Correct! The answer was **${decodeHtml(question.correct_answer)}**. You earned **${REWARD}** coins.`)
-        : errorEmbed(`❌ Wrong. The correct answer was **${decodeHtml(question.correct_answer)}**.`);
+        ? successEmbed(`✅ Bildin! Doğru cevap **${decodeHtml(question.correct_answer)}**. **${REWARD}** TL kazandın.`)
+        : errorEmbed(`❌ Olmadı. Doğru cevap **${decodeHtml(question.correct_answer)}** imiş.`);
 
       await buttonInteraction.update({ embeds: [resultEmbed], components: [] });
     });
@@ -86,7 +86,7 @@ module.exports = {
       if (collected.size === 0) {
         await interaction
           .editReply({
-            embeds: [errorEmbed(`⌛ Time's up! The correct answer was **${decodeHtml(question.correct_answer)}**.`)],
+            embeds: [errorEmbed(`⌛ Süre doldu! Doğru cevap **${decodeHtml(question.correct_answer)}** imiş.`)],
             components: [],
           })
           .catch(() => {});

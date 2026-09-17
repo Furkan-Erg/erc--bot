@@ -11,14 +11,14 @@ function formatUsage(command) {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('help').setDescription('List all available commands.'),
+  data: new SlashCommandBuilder().setName('help').setDescription('Tüm komutları listele.'),
   async execute(interaction) {
     const commands = [...interaction.client.commands.values()].sort((a, b) => a.data.name.localeCompare(b.data.name));
 
     const lines = commands.map((cmd) => `\`${formatUsage(cmd)}\` — ${cmd.data.description}`);
 
-    const embed = infoEmbed(lines.join('\n')).setTitle('📖 Commands').setFooter({
-      text: `Prefix: ${config.prefix}  •  <required>  [optional]  •  tag users with @, use "quotes" for multi-word text`,
+    const embed = infoEmbed(lines.join('\n')).setTitle('📖 Komutlar').setFooter({
+      text: `Önek: ${config.prefix}  •  <zorunlu>  [opsiyonel]  •  kullanıcıları @ ile etiketle, çok kelimeli metinler için "tırnak" kullan`,
     });
 
     await interaction.reply({ embeds: [embed] });

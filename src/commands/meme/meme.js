@@ -2,19 +2,19 @@ const { SlashCommandBuilder } = require('discord.js');
 const { infoEmbed, errorEmbed } = require('../../utils/embeds');
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('meme').setDescription('Rastkele meme getirir.'),
+  data: new SlashCommandBuilder().setName('meme').setDescription('Rastgele bir meme getirir.'),
   async execute(interaction) {
     await interaction.deferReply();
 
     const res = await fetch('https://meme-api.com/gimme');
     if (!res.ok) {
-      await interaction.editReply({ embeds: [errorEmbed('Could not fetch a meme right now, try again later.')] });
+      await interaction.editReply({ embeds: [errorEmbed('Şu an meme çekemedim, biraz sonra tekrar dene.')] });
       return;
     }
 
     const data = await res.json();
     if (data.nsfw) {
-      await interaction.editReply({ embeds: [errorEmbed('Got an NSFW result, try again.')] });
+      await interaction.editReply({ embeds: [errorEmbed('NSFW bir sonuç geldi, tekrar dener misin?')] });
       return;
     }
 

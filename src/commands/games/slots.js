@@ -3,8 +3,8 @@ const economyRepo = require('../../database/repositories/economyRepo');
 const { successEmbed, errorEmbed, infoEmbed } = require('../../utils/embeds');
 
 const SYMBOLS = [
-  { emoji: '🍒', weight: 40 },
-  { emoji: '🍋', weight: 30 },
+  { emoji: '🍵', weight: 40 },
+  { emoji: '🧿', weight: 30 },
   { emoji: '🔔', weight: 15 },
   { emoji: '⭐', weight: 10 },
   { emoji: '💎', weight: 5 },
@@ -36,15 +36,15 @@ function getMultiplier(reels) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('slots')
-    .setDescription('Spin the slot machine and bet coins.')
-    .addIntegerOption((opt) => opt.setName('bet').setDescription('Amount to bet').setMinValue(1).setRequired(true)),
+    .setDescription('Çarkı çevir, TL\'ni bahse yatır.')
+    .addIntegerOption((opt) => opt.setName('bet').setDescription('Bahis miktarı').setMinValue(1).setRequired(true)),
   async execute(interaction) {
     const { guildId, user } = interaction;
     const bet = interaction.options.getInteger('bet', true);
     const balance = economyRepo.getBalance(guildId, user.id);
 
     if (bet > balance) {
-      await interaction.reply({ embeds: [errorEmbed(`You only have **${balance}** coins.`)], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed(`Cebinde sadece **${balance}** TL var, o kadar bahis oynayamazsın.`)], ephemeral: true });
       return;
     }
 
@@ -59,10 +59,10 @@ module.exports = {
     const display = `🎰 [ ${reels.join(' | ')} ]`;
     const resultEmbed =
       net > 0
-        ? successEmbed(`${display}\nYou won **${winnings}** coins (net +${net})! Balance: **${newBalance}**.`)
+        ? successEmbed(`${display}\n**${winnings}** TL kazandın (net +${net})! Bakiye: **${newBalance}** TL.`)
         : net === 0
-          ? infoEmbed(`${display}\nBroke even. Balance: **${newBalance}**.`)
-          : errorEmbed(`${display}\nYou lost **${bet}** coins. Balance: **${newBalance}**.`);
+          ? infoEmbed(`${display}\nNe kâr ne zarar, başa baş. Bakiye: **${newBalance}** TL.`)
+          : errorEmbed(`${display}\nEnflasyona yenildin dayı, **${bet}** TL kaybettin. Bakiye: **${newBalance}** TL.`);
 
     await interaction.reply({ embeds: [resultEmbed] });
   },

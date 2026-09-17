@@ -7,7 +7,7 @@ const DAILY_AMOUNT = 200;
 const COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('daily').setDescription('Claim your daily coins.'),
+  data: new SlashCommandBuilder().setName('daily').setDescription('Günlük harçlığını al.'),
   async execute(interaction) {
     const { guildId, user } = interaction;
     const lastDaily = economyRepo.getLastDaily(guildId, user.id);
@@ -15,7 +15,7 @@ module.exports = {
 
     if (remaining > 0) {
       await interaction.reply({
-        embeds: [warnEmbed(`⏳ You already claimed your daily reward. Come back in **${formatDuration(remaining)}**.`)],
+        embeds: [warnEmbed(`⏳ Bugünkü harçlığını zaten aldın. **${formatDuration(remaining)}** sonra tekrar gel.`)],
         ephemeral: true,
       });
       return;
@@ -25,7 +25,7 @@ module.exports = {
     const balance = economyRepo.addBalance(guildId, user.id, DAILY_AMOUNT);
 
     await interaction.reply({
-      embeds: [successEmbed(`🎁 You claimed **${DAILY_AMOUNT}** coins! Balance: **${balance}**.`)],
+      embeds: [successEmbed(`🎁 Günlük harçlığını aldın: **${DAILY_AMOUNT}** TL! Bakiye: **${balance}** TL.`)],
     });
   },
 };

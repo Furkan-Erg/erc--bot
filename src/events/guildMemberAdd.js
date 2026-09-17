@@ -13,7 +13,7 @@ module.exports = {
 
       await channel.send({
         embeds: [
-          infoEmbed(`👋 Welcome to **${member.guild.name}**, <@${member.id}>! Glad to have you here.`),
+          infoEmbed(`👋 Hoş geldin **${member.guild.name}**'e, <@${member.id}>! Umarım çayın hazırdır, uzun süre kalacaksın.`),
         ],
       });
     } catch (err) {

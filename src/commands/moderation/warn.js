@@ -6,12 +6,12 @@ const { isModerator } = require('../../utils/permissions');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warn')
-    .setDescription('Issue a warning to a member.')
-    .addUserOption((opt) => opt.setName('user').setDescription('Member to warn').setRequired(true))
-    .addStringOption((opt) => opt.setName('reason').setDescription('Reason for the warning').setRequired(true)),
+    .setDescription('Bir üyeye uyarı ver.')
+    .addUserOption((opt) => opt.setName('user').setDescription('Uyarılacak üye').setRequired(true))
+    .addStringOption((opt) => opt.setName('reason').setDescription('Uyarı sebebi').setRequired(true)),
   async execute(interaction) {
     if (!isModerator(interaction)) {
-      await interaction.reply({ embeds: [errorEmbed('You need moderator permissions to use this.')], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed('Bu iş moderatör yetkisi ister, senin harcın değil.')], ephemeral: true });
       return;
     }
 
@@ -21,7 +21,7 @@ module.exports = {
     warningsRepo.addWarning(interaction.guildId, user.id, interaction.user.id, reason);
 
     await interaction.reply({
-      embeds: [successEmbed(`⚠️ Warned **${user.tag}**. Reason: ${reason}`)],
+      embeds: [successEmbed(`⚠️ **${user.tag}** uyarıldı. Sebep: ${reason}`)],
     });
   },
 };
