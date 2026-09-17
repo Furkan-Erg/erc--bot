@@ -9,6 +9,7 @@ const {
   entersState,
   StreamType,
 } = require('@discordjs/voice');
+const { PermissionFlagsBits } = require('discord.js');
 const ytdlp = require('./ytdlp');
 const panel = require('./panel');
 const logger = require('../utils/logger');
@@ -87,6 +88,76 @@ function requeueFinished(state) {
   }
 }
 
+// Bazı ağlardan Discord'un otomatik seçtiği ses sunucusuna (özellikle c-otp*.discord.media) UDP
+// paketleri geçmiyor; bağlantı "udp-el-sikisma" aşamasında ölüyor. Elle bölge seçilince farklı bir
+// ses sunucusuna düşüldüğü için sorun kalkıyor. Bot da aynı şeyi kendisi yapabilsin diye
+// başarısız bağlantıdan sonra kanalın bölgesi sırayla bu adaylara çevrilip tekrar deneniyor.
+const YEDEK_BOLGELER = (process.env.VOICE_REGIONS || 'rotterdam,frankfurt,milan,madrid')
+  .split(',')
+  .map((b) => b.trim())
+  .filter(Boolean);
+
+const BAGLANTI_BEKLEME_MS = 20_000;
+
+async function bolgeDegistirVeYenidenBagla(state, guildId) {
+  const kanal = state.voiceChannel;
+  if (!kanal) return false;
+
+  const bolge = YEDEK_BOLGELER.find((b) => !state.denenenBolgeler.includes(b));
+  if (!bolge) return false;
+
+  const izinler = kanal.permissionsFor(kanal.guild.members.me);
+  if (!izinler?.has(PermissionFlagsBits.ManageChannels)) {
+    logger.warn(`Ses bölgesi değiştirilemedi: "Kanalları Yönet" izni yok (#${kanal.name}, ${kanal.guild.name})`);
+    return false;
+  }
+
+  state.denenenBolgeler.push(bolge);
+  logger.info(`Ses bölgesi "${bolge}" olarak deneniyor (#${kanal.name}, ${kanal.guild.name})`);
+
+  try {
+    await kanal.setRTCRegion(bolge, 'Otomatik ses sunucusuna bağlanılamadı');
+  } catch (err) {
+    logger.error(`Ses bölgesi "${bolge}" olarak ayarlanamadı`, err);
+    return false;
+  }
+
+  try {
+    state.connection.destroy();
+  } catch {
+    // zaten kapanmış olabilir
+  }
+
+  state.connection = baglantiKur(kanal.guild, kanal, state.player);
+  return true;
+}
+
+async function baglantiyiBekle(state, guildId) {
+  for (;;) {
+    try {
+      await entersState(state.connection, VoiceConnectionStatus.Ready, BAGLANTI_BEKLEME_MS);
+      return true;
+    } catch (err) {
+      logger.error(
+        `Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`,
+        err
+      );
+
+      // State bu arada yok edilmişse (stop, kanal boşaldı vb.) uğraşmayı bırak.
+      if (getState(guildId) !== state) return false;
+
+      if (await bolgeDegistirVeYenidenBagla(state, guildId)) continue;
+
+      const sebep = state.denenenBolgeler.length
+        ? `Denediğim bölgeler: ${state.denenenBolgeler.join(', ')}. Kanalın **Bölge Geçersiz Kılma** ayarını elle değiştirmeyi dene.`
+        : 'Kanalda **Bağlan**, **Konuş** ve bölge değiştirebilmem için **Kanalları Yönet** iznim var mı bir bak.';
+      state.textChannel.send(`❌ Sesli kanala bağlanamadım. ${sebep}`).catch(() => {});
+      destroyState(guildId);
+      return false;
+    }
+  }
+}
+
 async function playNext(guildId) {
   const state = guildStates.get(guildId);
   if (!state) return;
@@ -105,16 +176,7 @@ async function playNext(guildId) {
   state.killStream?.();
 
   // Bağlantı hazır olmadan çalmaya başlarsak ses gitmiyor ve hiçbir hata da çıkmıyor.
-  try {
-    await entersState(state.connection, VoiceConnectionStatus.Ready, 20_000);
-  } catch (err) {
-    logger.error(`Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`, err);
-    state.textChannel
-      .send('❌ Sesli kanala bağlanamadım. Kanalda **Bağlan** ve **Konuş** iznim var mı, kanal dolu mu bir bak.')
-      .catch(() => {});
-    destroyState(guildId);
-    return;
-  }
+  if (!(await baglantiyiBekle(state, guildId))) return;
 
   try {
     const { stream, kill } = ytdlp.createStream(next.url, (err) => {
@@ -137,15 +199,40 @@ async function playNext(guildId) {
   }
 }
 
-function createState(guild, voiceChannel, textChannel) {
+// Bağlantı hem ilk kurulumda hem de bölge değişiminden sonra aynı şekilde kuruluyor.
+function baglantiKur(guild, voiceChannel, player) {
   const connection = joinVoiceChannel({
     channelId: voiceChannel.id,
     guildId: guild.id,
     adapterCreator: guild.voiceAdapterCreator,
   });
 
-  const player = createAudioPlayer();
   connection.subscribe(player);
+
+  // Bağlantı durumları, "çalmıyor ama hata da yok" vakalarını ayıklamak için loglanıyor.
+  connection.on('stateChange', (eski, yeni) => {
+    // Hazır olan bağlantının ses sunucusunu da yazıyoruz; çalışan ve çalışmayan sunucuları kıyaslamayı sağlıyor.
+    const ek = yeni.status === VoiceConnectionStatus.Ready ? ` (${agAsamasi(connection)})` : '';
+    logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}${ek}`);
+  });
+
+  connection.on(VoiceConnectionStatus.Disconnected, async () => {
+    try {
+      await Promise.race([
+        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+      ]);
+    } catch {
+      destroyState(guild.id);
+    }
+  });
+
+  return connection;
+}
+
+function createState(guild, voiceChannel, textChannel) {
+  const player = createAudioPlayer();
+  const connection = baglantiKur(guild, voiceChannel, player);
 
   const state = {
     connection,
@@ -153,18 +240,14 @@ function createState(guild, voiceChannel, textChannel) {
     queue: [],
     current: null,
     textChannel,
+    voiceChannel,
     loop: 'kapali',
     skipRequested: false,
     leaveTimer: null,
     panelMessage: null,
+    denenenBolgeler: [],
   };
 
-  // Bağlantı ve oynatıcı durumları, "çalmıyor ama hata da yok" vakalarını ayıklamak için loglanıyor.
-  connection.on('stateChange', (eski, yeni) => {
-    // Hazır olan bağlantının ses sunucusunu da yazıyoruz; çalışan ve çalışmayan sunucuları kıyaslamayı sağlıyor.
-    const ek = yeni.status === VoiceConnectionStatus.Ready ? ` (${agAsamasi(connection)})` : '';
-    logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}${ek}`);
-  });
   player.on('stateChange', (eski, yeni) => {
     logger.info(`Oynatıcı [${guild.name}]: ${eski.status} -> ${yeni.status}`);
   });
@@ -176,17 +259,6 @@ function createState(guild, voiceChannel, textChannel) {
     if (state.current) {
       state.current.failed = true;
       textChannel.send(`⚠️ **${state.current.title}** çalınırken hata oldu (${err.message}), sıradakine geçiyorum.`).catch(() => {});
-    }
-  });
-
-  connection.on(VoiceConnectionStatus.Disconnected, async () => {
-    try {
-      await Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-      ]);
-    } catch {
-      destroyState(guild.id);
     }
   });
 
