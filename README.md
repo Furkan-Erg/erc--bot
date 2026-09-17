@@ -8,7 +8,7 @@ Memeler, mini oyunlar/ekonomi, YouTube'dan müzik ve moderasyon araçlarıyla do
 - **Eğlence:** `!sallama`, `!sok`, `!capsle`, `!eksi`
 - **Müzik:** `!play`, `!skip`, `!stop`, `!pause`, `!resume`, `!queue`, `!np`
 - **Moderasyon/Yardımcı:** `!warn`, `!warnings`, `!poll`, `!remind`, `!ping`, `!userinfo`, `!serverinfo`, `!help`
-- **Oyunlar/Ekonomi:** `!balance`, `!daily`, `!work`, `!slots`, `!blackjack`, `!trivia`, `!leaderboard`
+- **Oyunlar/Ekonomi:** `!balance`, `!daily`, `!work`, `!slots`, `!blackjack`, `!trivia`, `!cs2`, `!leaderboard`
 - Bir üye katıldığında karşılama mesajı (`WELCOME_CHANNEL_ID` ayarlıysa)
 
 Sunucunda tüm komutları ve kullanım şeklini görmek için `!help` yaz. Argümanlar konuma göre sıralanır: kullanıcıları `@` ile etiketle, çok kelimeli metinleri son argüman değilse `"tırnak içine"` al (örn. `!warn @kullanici "kurallara uymuyor"`); son metin argümanı (örn. `!poll` seçeneği veya `!remind` mesajı) tırnak gerektirmeden mesajın geri kalanı olarak alınır.
@@ -51,7 +51,7 @@ npm install
 npm start   # ya da: node src/index.js
 ```
 
-Konsolda "Logged in as ..." çıktığını ve botun sunucunda Çevrimiçi göründüğünü doğrula. Her komut kategorisini Discord'da canlı test et: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!sallama <soru>`, `!sok @kullanici`, `!capsle <resim_url>`, `!eksi <baslik>`, `!warn @kullanici sebep`, `!poll "soru" "a" "b"`, `!remind 10m mesaj`, `!help`. Müzik komutlarını test etmek için önce bir sesli kanala gir, sonra `!play <şarkı adı ya da YouTube linki>`, `!queue`, `!skip`, `!pause`, `!resume`, `!np`, `!stop` sırasıyla dene.
+Konsolda "Logged in as ..." çıktığını ve botun sunucunda Çevrimiçi göründüğünü doğrula. Her komut kategorisini Discord'da canlı test et: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!cs2`, `!sallama <soru>`, `!sok @kullanici`, `!capsle <resim_url>`, `!eksi <baslik>`, `!warn @kullanici sebep`, `!poll "soru" "a" "b"`, `!remind 10m mesaj`, `!help`. Müzik komutlarını test etmek için önce bir sesli kanala gir, sonra `!play <şarkı adı ya da YouTube linki>`, `!queue`, `!skip`, `!pause`, `!resume`, `!np`, `!stop` sırasıyla dene.
 
 ## 4. VPS'ine Docker ile deploy et
 
