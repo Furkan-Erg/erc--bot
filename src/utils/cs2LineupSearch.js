@@ -24,11 +24,14 @@ function uygunMu(video, harita, tip) {
 }
 
 /**
- * Bir harita/utility tipi için 90 saniyeden kısa lineup kliplerini arar.
+ * Bir harita/utility tipi için 90 saniyeden kısa lineup kliplerini arar. Taraf/mevki
+ * filtresi verilirse terim sorgulara da giriyor, dönen kliplerde ise başlığı filtreye
+ * uyanlar `eslesti: true` ile işaretlenip başa alınıyor — süzmeyi çağıran yapıyor ki
+ * hiç eşleşme çıkmadığında elde yine de klip kalsın.
  * Sonuçlar 6 saat bellekte tutulur, aynı kombinasyon tekrar aranmaz.
  */
-async function lineupAra(haritaKey, tipKey) {
-  const anahtar = `${haritaKey}:${tipKey}`;
+async function lineupAra(haritaKey, tipKey, filtre = null) {
+  const anahtar = `${haritaKey}:${tipKey}:${filtre ? filtre.anahtar : '-'}`;
   const kayit = onbellek.get(anahtar);
   if (kayit && Date.now() - kayit.zaman < ONBELLEK_TTL_MS) return kayit.sonuc;
 
@@ -36,7 +39,7 @@ async function lineupAra(haritaKey, tipKey) {
   const tip = TIPLER[tipKey];
   const bulunanlar = new Map();
 
-  for (const sorgu of sorgular(haritaKey, tipKey)) {
+  for (const sorgu of sorgular(haritaKey, tipKey, filtre)) {
     // Tek bir sorgu patlarsa diğerleri devam etsin.
     const sonuc = await ytSearch(sorgu).catch((err) => {
       logger.warn(`CS2 lineup araması başarısız: "${sorgu}" (${err?.message || err})`);
@@ -52,13 +55,17 @@ async function lineupAra(haritaKey, tipKey) {
         saniye: video.duration.seconds,
         url: `https://youtu.be/${video.videoId}`,
         kucukResim: video.thumbnail,
+        eslesti: filtre ? filtre.desen.test(video.title) : false,
       });
     }
   }
 
-  // Güvenilir kanallar önce, sonra kısa klipler.
+  // Filtreye uyanlar önce, sonra güvenilir kanallar, sonra kısa klipler.
   const sonuc = [...bulunanlar.values()]
-    .sort((a, b) => kanalPuani(a.kanal) - kanalPuani(b.kanal) || a.saniye - b.saniye)
+    .sort(
+      (a, b) =>
+        Number(b.eslesti) - Number(a.eslesti) || kanalPuani(a.kanal) - kanalPuani(b.kanal) || a.saniye - b.saniye
+    )
     .slice(0, EN_FAZLA_SONUC);
 
   onbellek.set(anahtar, { zaman: Date.now(), sonuc });

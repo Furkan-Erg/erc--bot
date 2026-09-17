@@ -1,5 +1,14 @@
 const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { HARITALAR, TIPLER, HARITA_ADLARI, TIP_ADLARI, haritaCoz, tipCoz } = require('../../content/cs2Lineups');
+const {
+  HARITALAR,
+  TIPLER,
+  HARITA_ADLARI,
+  TIP_ADLARI,
+  TARAF_ADLARI,
+  haritaCoz,
+  tipCoz,
+  filtreCoz,
+} = require('../../content/cs2Lineups');
 const { lineupAra } = require('../../utils/cs2LineupSearch');
 const { infoEmbed, errorEmbed } = require('../../utils/embeds');
 const logger = require('../../utils/logger');
@@ -27,8 +36,8 @@ function sureMetni(saniye) {
   return dk > 0 ? `${dk}:${String(sn).padStart(2, '0')}` : `${sn} sn`;
 }
 
-function baslikMetni(harita, tip) {
-  return `${tip.emoji} ${harita.aranan} — ${tip.ad} lineup`;
+function baslikMetni(harita, tip, filtre) {
+  return `${tip.emoji} ${harita.aranan} — ${filtre ? `${filtre.ad} ` : ''}${tip.ad} lineup`;
 }
 
 function bilesenler(kapali, tekKlip) {
@@ -48,10 +57,12 @@ function bilesenler(kapali, tekKlip) {
 // Klip embed'de değil düz metinde gösteriliyor: oynatılabilir YouTube kutusunu
 // Discord'un kendi link önizleyicisi üretiyor ve bunun için URL'nin mesaj
 // içeriğinde çıplak durması gerekiyor (embed içindeki köprü metni tetiklemiyor).
-function klipMetni(haritaKey, tip, klip, sira, toplam) {
+function klipMetni(haritaKey, tip, filtre, filtreTuttu, klip, sira, toplam) {
   const harita = HARITALAR[haritaKey];
+  const uyari = filtreTuttu ? '' : `⚠️ **${filtre.ad}** için eşleşme bulamadım, genel sonuçları gösteriyorum.\n`;
   return (
-    `**${baslikMetni(harita, tip)}**  ·  ${sira}/${toplam}\n` +
+    `**${baslikMetni(harita, tip, filtre)}**  ·  ${sira}/${toplam}\n` +
+    uyari +
     `📺 ${klip.kanal}  ·  ⏱️ ${sureMetni(klip.saniye)}  ·  ${klip.baslik}\n` +
     klip.url
   );
@@ -62,7 +73,8 @@ module.exports = {
     .setName('lineup')
     .setDescription('CS2 haritası için smoke/flash/molotov/HE lineup klibi bulur.')
     .addStringOption((opt) => opt.setName('harita').setDescription('Örn. mirage, nuke, dust2').setRequired(true))
-    .addStringOption((opt) => opt.setName('tip').setDescription('smoke, flash, molotov, he (varsayılan: smoke)').setRequired(false)),
+    .addStringOption((opt) => opt.setName('tip').setDescription('smoke, flash, molotov, he (varsayılan: smoke)').setRequired(false))
+    .addStringOption((opt) => opt.setName('taraf').setDescription('ct, t ya da window / a site gibi bir mevki').setRequired(false)),
   async execute(interaction) {
     const { user } = interaction;
 
@@ -75,7 +87,17 @@ module.exports = {
     }
 
     const tipGirdisi = interaction.options.getString('tip');
-    const tipKey = tipGirdisi ? tipCoz(tipGirdisi) : VARSAYILAN_TIP;
+    const tarafGirdisi = interaction.options.getString('taraf');
+
+    let tipKey = tipGirdisi ? tipCoz(tipGirdisi) : VARSAYILAN_TIP;
+    let filtreGirdisi = tarafGirdisi;
+    // "!lineup ancient ct" ya da "!lineup mirage window" gibi kullanımlarda ikinci
+    // argüman tip değil taraf/mevki oluyor; tip çözülemediyse onu filtreye alıyoruz.
+    if (!tipKey && !tarafGirdisi) {
+      tipKey = VARSAYILAN_TIP;
+      filtreGirdisi = tipGirdisi;
+    }
+
     if (!tipKey) {
       await interaction.reply({
         embeds: [errorEmbed(`Bu utility tipini tanımıyorum.\n\n**Desteklenenler:** ${TIP_ADLARI.join(', ')}`)],
@@ -85,32 +107,48 @@ module.exports = {
 
     const harita = HARITALAR[haritaKey];
     const tip = TIPLER[tipKey];
+    const filtre = filtreCoz(filtreGirdisi);
 
     await interaction.deferReply();
     await interaction.editReply({
-      embeds: [infoEmbed(`🔎 **${harita.aranan}** için ${tip.ad.toLocaleLowerCase('tr-TR')} lineup'ları aranıyor…`).setTitle(baslikMetni(harita, tip))],
+      embeds: [
+        infoEmbed(
+          `🔎 **${harita.aranan}** için ${filtre ? `**${filtre.ad}** ` : ''}` +
+            `${tip.ad.toLocaleLowerCase('tr-TR')} lineup'ları aranıyor…`
+        ).setTitle(baslikMetni(harita, tip, filtre)),
+      ],
     });
 
-    const bulunanlar = await lineupAra(haritaKey, tipKey).catch((err) => {
+    const bulunanlar = await lineupAra(haritaKey, tipKey, filtre).catch((err) => {
       logger.error('CS2 lineup araması başarısız oldu', err);
       return [];
     });
 
     if (bulunanlar.length === 0) {
       await interaction.editReply({
-        embeds: [errorEmbed(`**${harita.aranan}** için ${tip.ad.toLocaleLowerCase('tr-TR')} lineup klibi bulamadım, başka bir kombinasyon dene.`)],
+        embeds: [
+          errorEmbed(
+            `**${harita.aranan}** için ${filtre ? `**${filtre.ad}** ` : ''}` +
+              `${tip.ad.toLocaleLowerCase('tr-TR')} lineup klibi bulamadım, başka bir kombinasyon dene.` +
+              (filtre ? `\n\nTaraf olarak şunları anlıyorum: ${TARAF_ADLARI.join(', ')}. Mevki için "window", "a site" gibi yaz.` : '')
+          ),
+        ],
       });
       return;
     }
 
-    const sira = karistir(bulunanlar);
+    // Filtre verildiyse yalnızca başlığı uyanları göster; hiç uyan yoksa elde kalanı
+    // göster ama mesajda bunu belirt.
+    const eslesenler = filtre ? bulunanlar.filter((k) => k.eslesti) : bulunanlar;
+    const filtreTuttu = !filtre || eslesenler.length > 0;
+    const sira = karistir(filtreTuttu ? eslesenler : bulunanlar);
     const tekKlip = sira.length === 1;
     let index = 0;
     let ilkGosterim = true;
 
     async function klibiGoster() {
       const yuk = {
-        content: klipMetni(haritaKey, tip, sira[index], index + 1, sira.length),
+        content: klipMetni(haritaKey, tip, filtre, filtreTuttu, sira[index], index + 1, sira.length),
         components: bilesenler(false, tekKlip),
       };
       // Arama embed'i sadece ilk seferde temizleniyor; sonraki düzenlemelerde embeds

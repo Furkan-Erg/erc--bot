@@ -51,7 +51,7 @@ npm install
 npm start   # ya da: node src/index.js
 ```
 
-Konsolda "Logged in as ..." çıktığını ve botun sunucunda Çevrimiçi göründüğünü doğrula. Her komut kategorisini Discord'da canlı test et: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!cs2`, `!lineup mirage smoke`, `!sallama <soru>`, `!sok @kullanici`, `!capsle <resim_url>`, `!eksi <baslik>`, `!warn @kullanici sebep`, `!poll "soru" "a" "b"`, `!remind 10m mesaj`, `!help`. Müzik komutlarını test etmek için önce bir sesli kanala gir, sonra `!play <şarkı adı ya da YouTube linki>`, `!queue`, `!skip`, `!pause`, `!resume`, `!np`, `!stop` sırasıyla dene.
+Konsolda "Logged in as ..." çıktığını ve botun sunucunda Çevrimiçi göründüğünü doğrula. Her komut kategorisini Discord'da canlı test et: `!ping`, `!meme`, `!daily`, `!slots 50`, `!blackjack 50`, `!trivia`, `!cs2`, `!lineup ancient smoke ct`, `!sallama <soru>`, `!sok @kullanici`, `!capsle <resim_url>`, `!eksi <baslik>`, `!warn @kullanici sebep`, `!poll "soru" "a" "b"`, `!remind 10m mesaj`, `!help`. Müzik komutlarını test etmek için önce bir sesli kanala gir, sonra `!play <şarkı adı ya da YouTube linki>`, `!queue`, `!skip`, `!pause`, `!resume`, `!np`, `!stop` sırasıyla dene.
 
 ## 4. VPS'ine Docker ile deploy et
 
