@@ -1,8 +1,6 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { HARITALAR, TIPLER, HARITA_ADLARI, TIP_ADLARI, haritaCoz, tipCoz } = require('../../content/cs2Lineups');
-const { haritaBul } = require('../../content/cs2Maps');
 const { lineupAra } = require('../../utils/cs2LineupSearch');
-const { klipIndir } = require('../../utils/cs2Clip');
 const { infoEmbed, errorEmbed } = require('../../utils/embeds');
 const logger = require('../../utils/logger');
 
@@ -47,18 +45,16 @@ function bilesenler(kapali, tekKlip) {
   ];
 }
 
-function klipEmbed(haritaKey, tip, klip, sira, toplam) {
+// Klip embed'de değil düz metinde gösteriliyor: oynatılabilir YouTube kutusunu
+// Discord'un kendi link önizleyicisi üretiyor ve bunun için URL'nin mesaj
+// içeriğinde çıplak durması gerekiyor (embed içindeki köprü metni tetiklemiyor).
+function klipMetni(haritaKey, tip, klip, sira, toplam) {
   const harita = HARITALAR[haritaKey];
-  const embed = infoEmbed(
-    `**[${klip.baslik}](${klip.url})**\n` +
-      `📺 ${klip.kanal}  •  ⏱️ ${sureMetni(klip.saniye)}`
-  )
-    .setTitle(baslikMetni(harita, tip))
-    .setFooter({ text: `${sira}/${toplam} klip  •  "Başka Lineup" ile sıradakine geç` });
-
-  const haritaGorseli = haritaBul(haritaKey);
-  if (haritaGorseli) embed.setThumbnail(haritaGorseli.gorsel);
-  return embed;
+  return (
+    `**${baslikMetni(harita, tip)}**  ·  ${sira}/${toplam}\n` +
+    `📺 ${klip.kanal}  ·  ⏱️ ${sureMetni(klip.saniye)}  ·  ${klip.baslik}\n` +
+    klip.url
+  );
 }
 
 module.exports = {
@@ -110,34 +106,21 @@ module.exports = {
     const sira = karistir(bulunanlar);
     const tekKlip = sira.length === 1;
     let index = 0;
-    // İndirme sürerken gelen ikinci tıklama iki paralel düzenleme başlatmasın.
-    let mesgul = false;
+    let ilkGosterim = true;
 
     async function klibiGoster() {
-      const klip = sira[index];
-      const embed = klipEmbed(haritaKey, tip, klip, index + 1, sira.length);
-      mesgul = true;
-
-      try {
-        await interaction
-          .editReply({
-            embeds: [infoEmbed(`⏬ Klip hazırlanıyor…\n\n**[${klip.baslik}](${klip.url})**`).setTitle(baslikMetni(harita, tip))],
-            files: [],
-            attachments: [],
-            components: bilesenler(true, tekKlip),
-          })
-          .catch(() => {});
-
-        // Klip inemezse (yt-dlp hatası, boyut sınırı) embed'deki YouTube linkine düşüyoruz.
-        const dosya = await klipIndir(klip.videoId);
-        const yuk = { embeds: [embed], files: [], attachments: [], components: bilesenler(false, tekKlip) };
-        if (dosya) yuk.files = [new AttachmentBuilder(dosya, { name: `${klip.videoId}.mp4` })];
-        else embed.setImage(klip.kucukResim);
-
-        await interaction.editReply(yuk);
-      } finally {
-        mesgul = false;
+      const yuk = {
+        content: klipMetni(haritaKey, tip, sira[index], index + 1, sira.length),
+        components: bilesenler(false, tekKlip),
+      };
+      // Arama embed'i sadece ilk seferde temizleniyor; sonraki düzenlemelerde embeds
+      // alanı hiç gönderilmiyor ki Discord yeni linkin önizlemesini kendi üretebilsin.
+      if (ilkGosterim) {
+        yuk.embeds = [];
+        ilkGosterim = false;
       }
+
+      await interaction.editReply(yuk);
     }
 
     await klibiGoster();
@@ -162,7 +145,6 @@ module.exports = {
           return;
         }
 
-        if (mesgul) return;
         index = (index + 1) % sira.length;
         await klibiGoster();
       } catch (err) {
