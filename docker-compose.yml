@@ -2,6 +2,9 @@ services:
   bot:
     build: .
     restart: always
+    # Discord ses trafiği UDP; Docker'ın köprü ağındaki NAT dönüş paketlerini düşürdüğü için
+    # bazı ses sunucularına (c-otp*.discord.media) bağlanılamıyordu. Host ağı NAT'ı devre dışı bırakır.
+    network_mode: host
     env_file: .env
     volumes:
       - bot-data:/app/data
