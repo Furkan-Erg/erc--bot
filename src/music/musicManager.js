@@ -92,6 +92,18 @@ async function playNext(guildId) {
   state.current = next;
   state.killStream?.();
 
+  // Bağlantı hazır olmadan çalmaya başlarsak ses gitmiyor ve hiçbir hata da çıkmıyor.
+  try {
+    await entersState(state.connection, VoiceConnectionStatus.Ready, 20_000);
+  } catch (err) {
+    logger.error(`Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status})`, err);
+    state.textChannel
+      .send('❌ Sesli kanala bağlanamadım. Kanalda **Bağlan** ve **Konuş** iznim var mı, kanal dolu mu bir bak.')
+      .catch(() => {});
+    destroyState(guildId);
+    return;
+  }
+
   try {
     const { stream, kill } = ytdlp.createStream(next.url, (err) => {
       logger.error('yt-dlp hatası', err);
@@ -134,6 +146,14 @@ function createState(guild, voiceChannel, textChannel) {
     leaveTimer: null,
     panelMessage: null,
   };
+
+  // Bağlantı ve oynatıcı durumları, "çalmıyor ama hata da yok" vakalarını ayıklamak için loglanıyor.
+  connection.on('stateChange', (eski, yeni) => {
+    logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}`);
+  });
+  player.on('stateChange', (eski, yeni) => {
+    logger.info(`Oynatıcı [${guild.name}]: ${eski.status} -> ${yeni.status}`);
+  });
 
   player.on(AudioPlayerStatus.Idle, () => playNext(guild.id));
   // Hatadan sonra oynatıcı zaten Idle'a geçip playNext'i tetikliyor; burada tekrar çağırmak şarkı atlatır.

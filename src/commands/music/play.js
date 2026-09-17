@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { getInfo, getPlaylist, MAX_PLAYLIST } = require('../../music/ytdlp');
 const ytSearch = require('yt-search');
 const { errorEmbed, successEmbed, infoEmbed } = require('../../utils/embeds');
@@ -38,6 +38,31 @@ module.exports = {
         embeds: [errorEmbed('Kanalda yoksun ki dayı, önce bir sesli kanala gir.')],
         ephemeral: true,
       });
+      return;
+    }
+
+    // İzin eksikse bağlantı sessizce takılıyor; sebebi baştan söylemek daha net.
+    const izinler = voiceChannel.permissionsFor(interaction.guild.members.me);
+    const eksikler = [
+      [PermissionFlagsBits.ViewChannel, 'Kanalı Görüntüle'],
+      [PermissionFlagsBits.Connect, 'Bağlan'],
+      [PermissionFlagsBits.Speak, 'Konuş'],
+    ]
+      .filter(([bayrak]) => !izinler?.has(bayrak))
+      .map(([, ad]) => ad);
+
+    if (eksikler.length > 0) {
+      logger.warn(`Ses izni eksik (#${voiceChannel.name}, sunucu: ${interaction.guild?.name}): ${eksikler.join(', ')}`);
+      await interaction.reply({
+        embeds: [errorEmbed(`**${voiceChannel.name}** kanalında şu iznim yok: **${eksikler.join(', ')}**`)],
+      });
+      return;
+    }
+
+    // Kanal dolu olsa bile "Üyeleri Taşı" izni olan bot girebilir.
+    if (voiceChannel.userLimit > 0 && voiceChannel.members.size >= voiceChannel.userLimit && !izinler.has(PermissionFlagsBits.MoveMembers)) {
+      logger.warn(`Ses kanalı dolu (#${voiceChannel.name}, sunucu: ${interaction.guild?.name})`);
+      await interaction.reply({ embeds: [errorEmbed(`**${voiceChannel.name}** dolu, içeri giremiyorum.`)] });
       return;
     }
 
