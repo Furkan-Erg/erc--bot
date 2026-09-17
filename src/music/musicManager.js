@@ -161,7 +161,9 @@ function createState(guild, voiceChannel, textChannel) {
 
   // Bağlantı ve oynatıcı durumları, "çalmıyor ama hata da yok" vakalarını ayıklamak için loglanıyor.
   connection.on('stateChange', (eski, yeni) => {
-    logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}`);
+    // Hazır olan bağlantının ses sunucusunu da yazıyoruz; çalışan ve çalışmayan sunucuları kıyaslamayı sağlıyor.
+    const ek = yeni.status === VoiceConnectionStatus.Ready ? ` (${agAsamasi(connection)})` : '';
+    logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}${ek}`);
   });
   player.on('stateChange', (eski, yeni) => {
     logger.info(`Oynatıcı [${guild.name}]: ${eski.status} -> ${yeni.status}`);
