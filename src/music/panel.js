@@ -16,9 +16,28 @@ function duraklatilmis(state) {
   return durum === AudioPlayerStatus.Paused || durum === AudioPlayerStatus.AutoPaused;
 }
 
+// Şu anki çalma konumunu saniye cinsinden hesaplar: son seek'in ofseti + o seek'ten beri geçen süre.
+function elapsedSaniye(state) {
+  const ofsetMs = state.current?.seekOffsetMs ?? 0;
+  const playbackMs = state.player.state?.resource?.playbackDuration ?? 0;
+  return Math.floor((ofsetMs + playbackMs) / 1000);
+}
+
+function sureMetni(saniye) {
+  const dk = Math.floor(saniye / 60);
+  const sn = saniye % 60;
+  return `${dk}:${String(sn).padStart(2, '0')}`;
+}
+
+function konumMetni(state) {
+  const gecen = sureMetni(elapsedSaniye(state));
+  const toplam = state.current?.duration;
+  return Number.isFinite(toplam) ? `${gecen} / ${sureMetni(toplam)}` : gecen;
+}
+
 function panelEmbed(state) {
   const { current, queue } = state;
-  const satirlar = [`Ekleyen: ${current.requestedBy ?? 'bilinmiyor'}`];
+  const satirlar = [`Ekleyen: ${current.requestedBy ?? 'bilinmiyor'}`, `⏱️ ${konumMetni(state)}`];
 
   if (queue.length > 0) {
     satirlar.push(`Sırada **${queue.length}** şarkı var. Sıradaki: **${queue[0].title}**`);
@@ -75,8 +94,28 @@ function panelButtons(state) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`${PREFIX}seek`)
-        .setLabel('Saniyeye Git')
+        .setCustomId(`${PREFIX}seek:-30`)
+        .setLabel('30sn')
+        .setEmoji('⏪')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}seek:-10`)
+        .setLabel('10sn')
+        .setEmoji('⏪')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}seekgosterge`)
+        .setLabel(konumMetni(state))
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}seek:10`)
+        .setLabel('10sn')
+        .setEmoji('⏩')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}seek:30`)
+        .setLabel('30sn')
         .setEmoji('⏩')
         .setStyle(ButtonStyle.Secondary)
     ),
@@ -88,4 +127,4 @@ function build(state) {
   return { embeds: [panelEmbed(state)], components: panelButtons(state) };
 }
 
-module.exports = { PREFIX, LOOP_ETIKETLERI, build, duraklatilmis };
+module.exports = { PREFIX, LOOP_ETIKETLERI, build, duraklatilmis, elapsedSaniye, sureMetni };

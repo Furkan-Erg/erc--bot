@@ -19,12 +19,13 @@ function getInfo(url) {
   return new Promise((resolve, reject) => {
     execFile(
       YTDLP_PATH,
-      [...baseArgs(), '--skip-download', '--print', '%(webpage_url)s\n%(title)s', url],
+      [...baseArgs(), '--skip-download', '--print', '%(webpage_url)s\n%(title)s\n%(duration)s', url],
       { timeout: 30_000 },
       (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr?.trim() || err.message));
-        const [videoUrl, title] = stdout.trim().split('\n');
-        resolve({ url: videoUrl, title });
+        const [videoUrl, title, sureStr] = stdout.trim().split('\n');
+        const sure = Number(sureStr);
+        resolve({ url: videoUrl, title, duration: Number.isFinite(sure) ? sure : null });
       },
     );
   });
@@ -40,7 +41,7 @@ function getPlaylist(url) {
         '--playlist-end',
         String(MAX_PLAYLIST),
         '--print',
-        '%(id)s\t%(title)s',
+        '%(id)s\t%(duration)s\t%(title)s',
         url,
       ],
       { timeout: 60_000, maxBuffer: 5 * 1024 * 1024 },
@@ -51,8 +52,13 @@ function getPlaylist(url) {
           .split('\n')
           .filter(Boolean)
           .map((line) => {
-            const [id, ...titleParts] = line.split('\t');
-            return { url: `https://www.youtube.com/watch?v=${id}`, title: titleParts.join('\t') || id };
+            const [id, sureStr, ...titleParts] = line.split('\t');
+            const sure = Number(sureStr);
+            return {
+              url: `https://www.youtube.com/watch?v=${id}`,
+              title: titleParts.join('\t') || id,
+              duration: Number.isFinite(sure) ? sure : null,
+            };
           })
           .filter((t) => !GIZLI_BASLIKLAR.has(t.title));
         resolve(tracks);

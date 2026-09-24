@@ -23,7 +23,7 @@ async function resolveTracks(query) {
   }
   const result = await ytSearch(query);
   const video = result.videos?.[0];
-  return video ? [{ url: video.url, title: video.title }] : [];
+  return video ? [{ url: video.url, title: video.title, duration: video.seconds || null }] : [];
 }
 
 module.exports = {
