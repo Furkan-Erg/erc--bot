@@ -16,6 +16,7 @@ const logger = require('../utils/logger');
 
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
 const BOS_KANAL_BEKLEME_MS = 30_000;
+const SIRA_BITTI_BEKLEME_MS = 15_000;
 
 const guildStates = new Map();
 
@@ -67,6 +68,7 @@ function destroyState(guildId) {
   if (!state) return;
   guildStates.delete(guildId);
   clearTimeout(state.leaveTimer);
+  clearTimeout(state.queueBittiTimer);
   removePanel(state);
   try {
     state.killStream?.();
@@ -168,7 +170,14 @@ async function playNext(guildId) {
   const next = state.queue.shift();
   if (!next) {
     state.current = null;
-    destroyState(guildId);
+    // Sıra bitince hemen çıkmıyoruz; kısa süre içinde yeni şarkı eklenirse (enqueueMany bu timer'ı
+    // temizler) kanalda kalınmaya devam edilsin diye bekliyoruz.
+    clearTimeout(state.queueBittiTimer);
+    state.queueBittiTimer = setTimeout(() => {
+      if (getState(guildId) !== state) return;
+      if (state.current || state.queue.length > 0) return;
+      destroyState(guildId);
+    }, SIRA_BITTI_BEKLEME_MS);
     return;
   }
 
@@ -244,6 +253,7 @@ function createState(guild, voiceChannel, textChannel) {
     loop: 'kapali',
     skipRequested: false,
     leaveTimer: null,
+    queueBittiTimer: null,
     panelMessage: null,
     denenenBolgeler: [],
   };
@@ -273,6 +283,8 @@ function enqueueMany(guild, voiceChannel, textChannel, tracks) {
   state.queue.push(...tracks);
 
   if (willStartImmediately) {
+    clearTimeout(state.queueBittiTimer);
+    state.queueBittiTimer = null;
     playNext(guild.id);
   }
 
