@@ -67,17 +67,25 @@ function getPlaylist(url) {
   });
 }
 
-function getDirectStreamUrl(url) {
+// URL'nin yanı sıra isteğin YouTube tarafından kabul edilmesi için
+// gereken http_headers'ı (User-Agent, Referer vs.) da döner; ffmpeg bu header'lar olmadan
+// googlevideo adresine bağlanamıyor ve "Input/output error" ile başarısız oluyor.
+function getDirectStreamInfo(url) {
   return new Promise((resolve, reject) => {
     execFile(
       YTDLP_PATH,
-      [...baseArgs(), '-f', 'bestaudio/best', '--get-url', url],
-      { timeout: 30_000 },
+      [...baseArgs(), '-f', 'bestaudio/best', '-j', url],
+      { timeout: 30_000, maxBuffer: 5 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr?.trim() || err.message));
-        const dogrudanUrl = stdout.trim().split('\n').pop();
-        if (!dogrudanUrl) return reject(new Error('yt-dlp doğrudan akış adresi vermedi'));
-        resolve(dogrudanUrl);
+        let info;
+        try {
+          info = JSON.parse(stdout.trim().split('\n').pop());
+        } catch (parseErr) {
+          return reject(new Error(`yt-dlp çıktısı ayrıştırılamadı: ${parseErr.message}`));
+        }
+        if (!info?.url) return reject(new Error('yt-dlp doğrudan akış adresi vermedi'));
+        resolve({ url: info.url, headers: info.http_headers || {} });
       },
     );
   });
@@ -88,13 +96,22 @@ function getDirectStreamUrl(url) {
 // seekable olmadığı için) baştan itibaren decode edip atmak zorunda kalır; bunun yerine yt-dlp'den
 // doğrudan medya adresini alıp ffmpeg'e -i olarak veriyoruz, böylece HTTP byte-range ile hızlı seek olur.
 async function createSeekStream(url, saniye, onError) {
-  const dogrudanUrl = await getDirectStreamUrl(url);
+  const { url: dogrudanUrl, headers } = await getDirectStreamInfo(url);
 
-  const proc = spawn(
-    FFMPEG_PATH,
-    ['-ss', String(Math.max(0, saniye)), '-i', dogrudanUrl, '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'],
-    { stdio: ['ignore', 'pipe', 'pipe'] },
+  const ffmpegArgs = [];
+  if (headers['User-Agent']) ffmpegArgs.push('-user_agent', headers['User-Agent']);
+  const digerHeaderlar = Object.entries(headers)
+    .filter(([ad]) => ad !== 'User-Agent')
+    .map(([ad, deger]) => `${ad}: ${deger}`)
+    .join('\r\n');
+  if (digerHeaderlar) ffmpegArgs.push('-headers', `${digerHeaderlar}\r\n`);
+  ffmpegArgs.push(
+    '-ss', String(Math.max(0, saniye)),
+    '-i', dogrudanUrl,
+    '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
   );
+
+  const proc = spawn(FFMPEG_PATH, ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   let stderr = '';
   proc.stderr.on('data', (chunk) => {
