@@ -12,6 +12,7 @@ const HARITALAR = {
   de_train: { aranan: 'Train', desen: /\btrain\b/, takmaAdlar: ['train', 'tren'] },
   de_anubis: { aranan: 'Anubis', desen: /\banubis\b/, takmaAdlar: ['anubis'] },
   de_vertigo: { aranan: 'Vertigo', desen: /\bvertigo\b/, takmaAdlar: ['vertigo'] },
+  de_cache: { aranan: 'Cache', desen: /\bcache\b/, takmaAdlar: ['cache', 'keş', 'kes'] },
 };
 
 const TIPLER = {
