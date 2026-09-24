@@ -73,6 +73,13 @@ function panelButtons(state) {
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(state.queue.length < 2)
     ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}seek`)
+        .setLabel('Saniyeye Git')
+        .setEmoji('⏩')
+        .setStyle(ButtonStyle.Secondary)
+    ),
   ];
 }
 

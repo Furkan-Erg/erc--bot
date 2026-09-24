@@ -328,6 +328,41 @@ function resume(guildId) {
   refreshPanel(guildId);
 }
 
+// Çalan şarkıyı belirtilen saniyeden itibaren yeniden başlatır.
+async function seek(guildId, saniye) {
+  const state = getState(guildId);
+  if (!state?.current) return false;
+
+  const hedef = state.current;
+  state.killStream?.();
+
+  let akis;
+  try {
+    akis = await ytdlp.createSeekStream(hedef.url, saniye, (err) => {
+      logger.error('yt-dlp/ffmpeg seek hatası', err);
+      if (state.current === hedef) {
+        state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi (${err.message}).`).catch(() => {});
+      }
+    });
+  } catch (err) {
+    logger.error('Seek akışı başlatılamadı', err);
+    return false;
+  }
+
+  // Bu arada şarkı değişmiş ya da state yok edilmişse yeni akışı hemen kapat.
+  if (getState(guildId) !== state || state.current !== hedef) {
+    akis.kill();
+    return false;
+  }
+
+  state.killStream = akis.kill;
+  hedef.seekOffsetMs = saniye * 1000;
+  const resource = createAudioResource(akis.stream, { inputType: StreamType.Raw });
+  state.player.play(resource);
+  refreshPanel(guildId);
+  return true;
+}
+
 function setLoop(guildId, mod) {
   const state = getState(guildId);
   if (!state) return null;
@@ -388,6 +423,7 @@ module.exports = {
   stop,
   pause,
   resume,
+  seek,
   setLoop,
   shuffle,
   checkEmptyChannel,

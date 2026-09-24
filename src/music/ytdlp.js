@@ -2,6 +2,8 @@ const { spawn, execFile } = require('child_process');
 
 // YouTube'dan akış çekmek için yt-dlp kullanıyoruz; ytdl-core YouTube değişikliklerine yetişemiyor.
 const YTDLP_PATH = process.env.YTDLP_PATH || 'yt-dlp';
+// musicManager.js normalde bunu daha önce ayarlıyor ama ytdlp.js tek başına da require edilebiliyor (bkz. play.js).
+const FFMPEG_PATH = process.env.FFMPEG_PATH || require('ffmpeg-static');
 
 const MAX_PLAYLIST = 50;
 const GIZLI_BASLIKLAR = new Set(['[Private video]', '[Deleted video]']);
@@ -59,6 +61,50 @@ function getPlaylist(url) {
   });
 }
 
+function getDirectStreamUrl(url) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      YTDLP_PATH,
+      [...baseArgs(), '-f', 'bestaudio/best', '--get-url', url],
+      { timeout: 30_000 },
+      (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr?.trim() || err.message));
+        const dogrudanUrl = stdout.trim().split('\n').pop();
+        if (!dogrudanUrl) return reject(new Error('yt-dlp doğrudan akış adresi vermedi'));
+        resolve(dogrudanUrl);
+      },
+    );
+  });
+}
+
+// Belirli bir saniyeden başlayan ham PCM akışı üretir; panelin "saniyeye git" özelliği bunu kullanıyor.
+// yt-dlp'nin stdout'una yazdığı akış üzerinde ffmpeg'in -ss ile arama yapması (input seeking, stdin
+// seekable olmadığı için) baştan itibaren decode edip atmak zorunda kalır; bunun yerine yt-dlp'den
+// doğrudan medya adresini alıp ffmpeg'e -i olarak veriyoruz, böylece HTTP byte-range ile hızlı seek olur.
+async function createSeekStream(url, saniye, onError) {
+  const dogrudanUrl = await getDirectStreamUrl(url);
+
+  const proc = spawn(
+    FFMPEG_PATH,
+    ['-ss', String(Math.max(0, saniye)), '-i', dogrudanUrl, '-vn', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+
+  let stderr = '';
+  proc.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  proc.on('error', (err) => onError(err));
+  proc.on('close', (code) => {
+    if (code && code !== 0 && !proc.killed) {
+      onError(new Error(stderr.trim().split('\n').pop() || `ffmpeg ${code} koduyla çıktı`));
+    }
+  });
+  proc.stdout.on('error', () => {});
+
+  return { stream: proc.stdout, kill: () => proc.kill('SIGKILL') };
+}
+
 function createStream(url, onError) {
   const proc = spawn(YTDLP_PATH, [...baseArgs(), '-f', 'bestaudio/best', '-o', '-', url], {
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -80,4 +126,4 @@ function createStream(url, onError) {
   return { stream: proc.stdout, kill: () => proc.kill('SIGKILL') };
 }
 
-module.exports = { getInfo, getPlaylist, createStream, MAX_PLAYLIST };
+module.exports = { getInfo, getPlaylist, createStream, createSeekStream, MAX_PLAYLIST };
