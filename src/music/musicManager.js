@@ -17,6 +17,11 @@ const logger = require('../utils/logger');
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
 const BOS_KANAL_BEKLEME_MS = 30_000;
 const SIRA_BITTI_BEKLEME_MS = 15_000;
+// Otomatik oynatma aynı şarkıları döndürmesin diye son çalınanlar hatırlanıyor.
+const CALINAN_HAFIZA = 200;
+// Mix listelerinde ara sıra 1 saatlik derlemeler çıkıyor; otomatik oynatmada onlar atlanıyor.
+const OTOMATIK_MAX_SURE_SN = 15 * 60;
+const OTOMATIK_EKLEYEN = '♾️ Otomatik oynatma';
 
 const guildStates = new Map();
 
@@ -160,6 +165,46 @@ async function baglantiyiBekle(state, guildId) {
   }
 }
 
+// Bir şarkının Mix listesi tek sefer çekilip saklanıyor; şarkı çalarken önceden istenince sıradakine
+// geçiş beklemesiz oluyor. Hata olursa önbellek bırakılıyor ki sonraki denemede tekrar çekilsin.
+function mixGetir(state, seed) {
+  const id = ytdlp.videoIdOf(seed?.url);
+  if (!id) return Promise.resolve([]);
+
+  if (state.mixOnbellek?.id !== id) {
+    const onbellek = { id, adaylar: null };
+    onbellek.adaylar = ytdlp.getMix(id).catch((err) => {
+      logger.error(`Otomatik oynatma için Mix listesi çekilemedi (video: ${id})`, err);
+      if (state.mixOnbellek === onbellek) state.mixOnbellek = null;
+      return [];
+    });
+    state.mixOnbellek = onbellek;
+  }
+  return state.mixOnbellek.adaylar;
+}
+
+// YouTube'un otomatik oynatmasındaki gibi son çalınan şarkının Mix'inden henüz çalınmamış ilk şarkıyı seçer.
+async function otomatikSarkiBul(state) {
+  const adaylar = await mixGetir(state, state.sonCalinan);
+  const secilen = adaylar.find((t) => {
+    const id = ytdlp.videoIdOf(t.url);
+    return id && !state.calinanlar.includes(id) && !(t.duration > OTOMATIK_MAX_SURE_SN);
+  });
+  return secilen ? { ...secilen, requestedBy: OTOMATIK_EKLEYEN } : null;
+}
+
+function otomatikOnYukle(state) {
+  if (state.autoplay && state.queue.length === 0 && state.sonCalinan) mixGetir(state, state.sonCalinan);
+}
+
+function calinanlaraEkle(state, track) {
+  const id = ytdlp.videoIdOf(track.url);
+  if (!id) return;
+  state.calinanlar = state.calinanlar.filter((c) => c !== id);
+  state.calinanlar.push(id);
+  if (state.calinanlar.length > CALINAN_HAFIZA) state.calinanlar.shift();
+}
+
 async function playNext(guildId) {
   const state = guildStates.get(guildId);
   if (!state) return;
@@ -167,7 +212,21 @@ async function playNext(guildId) {
   requeueFinished(state);
   state.skipRequested = false;
 
-  const next = state.queue.shift();
+  let next = state.queue.shift();
+  if (!next && state.autoplay && state.sonCalinan) {
+    // Arama sürerken /play gelirse enqueueMany ayrıca playNext başlatmasın diye bayrak tutuluyor.
+    state.current = null;
+    state.otomatikAraniyor = true;
+    const oneri = await otomatikSarkiBul(state);
+    state.otomatikAraniyor = false;
+    if (getState(guildId) !== state) return;
+
+    // Bu arada biri şarkı eklediyse önce onunki çalsın; otomatik oynatma kapatıldıysa öneri atılır.
+    next = state.queue.shift() ?? (state.autoplay ? oneri : null);
+    if (!next && state.autoplay) {
+      state.textChannel.send('♾️ Otomatik oynatma için yeni bir şarkı bulamadım.').catch(() => {});
+    }
+  }
   if (!next) {
     state.current = null;
     // Sıra bitince hemen çıkmıyoruz; kısa süre içinde yeni şarkı eklenirse (enqueueMany bu timer'ı
@@ -182,6 +241,8 @@ async function playNext(guildId) {
   }
 
   state.current = next;
+  state.sonCalinan = next;
+  calinanlaraEkle(state, next);
   state.killStream?.();
 
   // Bağlantı hazır olmadan çalmaya başlarsak ses gitmiyor ve hiçbir hata da çıkmıyor.
@@ -200,6 +261,7 @@ async function playNext(guildId) {
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
     state.player.play(resource);
     sendPanel(state);
+    otomatikOnYukle(state);
   } catch (err) {
     logger.error('Şarkı çalınırken hata oluştu', err);
     next.failed = true;
@@ -251,6 +313,11 @@ function createState(guild, voiceChannel, textChannel) {
     textChannel,
     voiceChannel,
     loop: 'kapali',
+    autoplay: false,
+    otomatikAraniyor: false,
+    sonCalinan: null,
+    calinanlar: [],
+    mixOnbellek: null,
     skipRequested: false,
     leaveTimer: null,
     queueBittiTimer: null,
@@ -278,7 +345,7 @@ function createState(guild, voiceChannel, textChannel) {
 
 function enqueueMany(guild, voiceChannel, textChannel, tracks) {
   const state = guildStates.get(guild.id) || createState(guild, voiceChannel, textChannel);
-  const willStartImmediately = !state.current && state.queue.length === 0;
+  const willStartImmediately = !state.current && state.queue.length === 0 && !state.otomatikAraniyor;
 
   state.queue.push(...tracks);
 
@@ -372,6 +439,16 @@ function setLoop(guildId, mod) {
   return yeniMod;
 }
 
+// Açıkken kuyruk bitince YouTube'un otomatik oynatması gibi benzer şarkılarla devam edilir.
+function toggleAutoplay(guildId) {
+  const state = getState(guildId);
+  if (!state) return null;
+  state.autoplay = !state.autoplay;
+  otomatikOnYukle(state);
+  refreshPanel(guildId);
+  return state.autoplay;
+}
+
 function shuffle(guildId) {
   const state = getState(guildId);
   if (!state) return 0;
@@ -425,6 +502,7 @@ module.exports = {
   resume,
   seek,
   setLoop,
+  toggleAutoplay,
   shuffle,
   checkEmptyChannel,
   refreshPanel,

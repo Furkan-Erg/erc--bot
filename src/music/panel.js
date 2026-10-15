@@ -45,6 +45,9 @@ function panelEmbed(state) {
   if (state.loop !== 'kapali') {
     satirlar.push(`🔁 ${LOOP_ETIKETLERI[state.loop]}`);
   }
+  if (state.autoplay) {
+    satirlar.push('♾️ Otomatik oynatma açık: sıra bitince benzer şarkılarla devam edilecek');
+  }
   if (duraklatilmis(state)) {
     satirlar.push('⏸️ Duraklatıldı');
   }
@@ -118,6 +121,13 @@ function panelButtons(state) {
         .setLabel('30sn')
         .setEmoji('⏩')
         .setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${PREFIX}autoplay`)
+        .setLabel(state.autoplay ? 'Otomatik oynatma: Açık' : 'Otomatik oynatma: Kapalı')
+        .setEmoji('♾️')
+        .setStyle(state.autoplay ? ButtonStyle.Primary : ButtonStyle.Secondary)
     ),
   ];
 }

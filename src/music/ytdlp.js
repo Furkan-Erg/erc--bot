@@ -31,7 +31,7 @@ function getInfo(url) {
   });
 }
 
-function getPlaylist(url) {
+function getPlaylist(url, limit = MAX_PLAYLIST) {
   return new Promise((resolve, reject) => {
     execFile(
       YTDLP_PATH,
@@ -39,7 +39,7 @@ function getPlaylist(url) {
         ...baseArgs({ playlist: true }),
         '--flat-playlist',
         '--playlist-end',
-        String(MAX_PLAYLIST),
+        String(limit),
         '--print',
         '%(id)s\t%(duration)s\t%(title)s',
         url,
@@ -65,6 +65,18 @@ function getPlaylist(url) {
       },
     );
   });
+}
+
+// YouTube'un bir şarkıdan sonra otomatik geçtiği şarkılar, o şarkının "Mix" listesinden (list=RD<id>)
+// geliyor. Listenin ilk elemanı şarkının kendisi.
+function getMix(videoId, limit = 25) {
+  return getPlaylist(`https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`, limit);
+}
+
+// Kuyruktaki şarkıların linki farklı biçimlerde gelebiliyor (watch?v=, youtu.be/, shorts/).
+function videoIdOf(url) {
+  const eslesme = /(?:[?&]v=|youtu\.be\/|\/shorts\/)([\w-]{11})/.exec(url ?? '');
+  return eslesme ? eslesme[1] : null;
 }
 
 // URL'nin yanı sıra isteğin YouTube tarafından kabul edilmesi için
@@ -149,4 +161,4 @@ function createStream(url, onError) {
   return { stream: proc.stdout, kill: () => proc.kill('SIGKILL') };
 }
 
-module.exports = { getInfo, getPlaylist, createStream, createSeekStream, MAX_PLAYLIST };
+module.exports = { getInfo, getPlaylist, getMix, videoIdOf, createStream, createSeekStream, MAX_PLAYLIST };

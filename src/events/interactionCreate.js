@@ -84,6 +84,14 @@ module.exports = {
           await interaction.reply({ content: `🔁 ${panel.LOOP_ETIKETLERI[mod]}`, ephemeral: true }).catch(() => {});
           return;
         }
+        case 'autoplay': {
+          const acik = musicManager.toggleAutoplay(guildId);
+          const mesaj = acik
+            ? '♾️ Otomatik oynatma açıldı: sıra bitince YouTube gibi benzer şarkılarla devam edeceğim.'
+            : '♾️ Otomatik oynatma kapatıldı.';
+          await interaction.reply({ content: mesaj, ephemeral: true }).catch(() => {});
+          return;
+        }
         case 'shuffle': {
           const kalan = musicManager.shuffle(guildId);
           await interaction.reply({ content: `🔀 Kuyruk karıştırıldı (${kalan} şarkı).`, ephemeral: true }).catch(() => {});
