@@ -5,6 +5,8 @@ services:
     env_file: .env
     volumes:
       - bot-data:/app/data
+      # YouTube çerez dosyası (secrets/youtube-cookies.txt, repoda yok): salt okunur; bot yazılabilir kopyasını kullanır
+      - ./secrets:/app/secrets:ro
 
 volumes:
   bot-data:

@@ -254,7 +254,7 @@ async function playNext(guildId) {
       // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
       next.failed = true;
       if (state.current === next) {
-        state.textChannel.send(`⚠️ **${next.title}** çekilemedi (${err.message}).`).catch(() => {});
+        state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
       }
     });
     state.killStream = kill;
@@ -408,7 +408,7 @@ async function seek(guildId, saniye) {
     akis = await ytdlp.createSeekStream(hedef.url, saniye, (err) => {
       logger.error('yt-dlp/ffmpeg seek hatası', err);
       if (state.current === hedef) {
-        state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi (${err.message}).`).catch(() => {});
+        state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
       }
     });
   } catch (err) {
