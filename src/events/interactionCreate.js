@@ -15,14 +15,13 @@ async function uyar(interaction, mesaj) {
 }
 
 // +/- adım butonlarıyla saniyeyi ileri/geri kaydırır; hedef negatife düşerse 0'a sabitlenir.
-async function seekAdimUygula(interaction, state, delta) {
+async function seekAdimUygula(interaction, delta) {
   const guildId = interaction.guildId;
-  const mevcut = panel.elapsedSaniye(state);
-  const hedefSaniye = Math.max(0, mevcut + delta);
 
   await interaction.deferUpdate().catch(() => {});
   try {
-    const basarili = await musicManager.seek(guildId, hedefSaniye);
+    // Art arda tıklamalar musicManager içinde tek seek'e birleşiyor; hedef saniyeyi o hesaplıyor.
+    const basarili = await musicManager.seekBy(guildId, delta);
     if (!basarili) {
       await interaction.followUp({ content: 'Saniyeye gidilemedi.', ephemeral: true }).catch(() => {});
     }
@@ -52,7 +51,7 @@ module.exports = {
 
     if (aksiyon.startsWith('seek:')) {
       const delta = Number(aksiyon.slice('seek:'.length));
-      await seekAdimUygula(interaction, state, delta);
+      await seekAdimUygula(interaction, delta);
       return;
     }
 

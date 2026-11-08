@@ -7,11 +7,13 @@ const {
   AudioPlayerStatus,
   VoiceConnectionStatus,
   entersState,
+  demuxProbe,
   StreamType,
 } = require('@discordjs/voice');
 const { PermissionFlagsBits } = require('discord.js');
 const ytdlp = require('./ytdlp');
 const panel = require('./panel');
+const kalite = require('./kalite');
 const logger = require('../utils/logger');
 
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
@@ -22,6 +24,19 @@ const CALINAN_HAFIZA = 200;
 // Mix listelerinde ara sıra 1 saatlik derlemeler çıkıyor; otomatik oynatmada onlar atlanıyor.
 const OTOMATIK_MAX_SURE_SN = 15 * 60;
 const OTOMATIK_EKLEYEN = '♾️ Otomatik oynatma';
+
+// yt-dlp takılırsa oynatıcı sonsuza kadar sessiz beklerdi; ilk veri bu sürede gelmezse şarkı hatalı sayılır.
+// Yavaş/yoğun sunucuda yt-dlp'nin imza çözümü bile 10-20 sn sürebildiği için süre cömert tutuluyor.
+const ILK_VERI_BEKLEME_MS = 45_000;
+
+// Akışın ilk baytlarına bakıp türünü (WebM/Ogg Opus ya da başka) tespit eder; zaman aşımı korumalı.
+function akisiTani(stream) {
+  let zamanlayici;
+  const zamanAsimi = new Promise((_, reddet) => {
+    zamanlayici = setTimeout(() => reddet(new Error('akış zamanında veri vermedi')), ILK_VERI_BEKLEME_MS);
+  });
+  return Promise.race([demuxProbe(stream), zamanAsimi]).finally(() => clearTimeout(zamanlayici));
+}
 
 const guildStates = new Map();
 
@@ -74,6 +89,11 @@ function destroyState(guildId) {
   guildStates.delete(guildId);
   clearTimeout(state.leaveTimer);
   clearTimeout(state.queueBittiTimer);
+  if (state.seekDurum) {
+    clearTimeout(state.seekDurum.timer);
+    state.seekDurum.bekleyenler.forEach((coz) => coz(false));
+    state.seekDurum = null;
+  }
   removePanel(state);
   try {
     state.killStream?.();
@@ -186,10 +206,12 @@ function mixGetir(state, seed) {
 // YouTube'un otomatik oynatmasındaki gibi son çalınan şarkının Mix'inden henüz çalınmamış ilk şarkıyı seçer.
 async function otomatikSarkiBul(state) {
   const adaylar = await mixGetir(state, state.sonCalinan);
-  const secilen = adaylar.find((t) => {
+  const yeniler = adaylar.filter((t) => {
     const id = ytdlp.videoIdOf(t.url);
     return id && !state.calinanlar.includes(id) && !(t.duration > OTOMATIK_MAX_SURE_SN);
   });
+  // Slowed/nightcore/8D/karaoke gibi parçalar elenir, resmî kaynaklar (Topic, VEVO, Official) öne alınır.
+  const secilen = kalite.enIyiniSec(yeniler);
   return secilen ? { ...secilen, requestedBy: OTOMATIK_EKLEYEN } : null;
 }
 
@@ -241,6 +263,8 @@ async function playNext(guildId) {
   }
 
   state.current = next;
+  // Döngüde aynı şarkı nesnesi yeniden çalınıyor; önceki seek'in ofseti süre göstergesini bozmasın.
+  next.seekOffsetMs = 0;
   state.sonCalinan = next;
   calinanlaraEkle(state, next);
   state.killStream?.();
@@ -258,12 +282,27 @@ async function playNext(guildId) {
       }
     });
     state.killStream = kill;
-    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+
+    // Akışın türü ilk baytlardan anlaşılır: YouTube Opus (WebM) verirse paketler Discord'a olduğu gibi
+    // gider (ffmpeg'le çözüp yeniden kodlama yok); başka bir biçimse ffmpeg'e dönüştürtülür.
+    const { stream: kaynak, type } = await akisiTani(stream);
+
+    // Tanıma beklenirken şarkı atlandıysa ya da bağlantı kapandıysa bu akışı çalma.
+    if (getState(guildId) !== state || state.current !== next || state.skipRequested) {
+      kill();
+      if (getState(guildId) === state && state.current === next) playNext(guildId);
+      return;
+    }
+
+    // "webm/opus" = dönüştürmesiz doğrudan geçiş; "arbitrary" = ffmpeg ile dönüştürülen yedek yol.
+    logger.info(`Akış türü [${next.title}]: ${type}`);
+    const resource = createAudioResource(kaynak, { inputType: type });
     state.player.play(resource);
     sendPanel(state);
     otomatikOnYukle(state);
   } catch (err) {
     logger.error('Şarkı çalınırken hata oluştu', err);
+    state.killStream?.();
     next.failed = true;
     state.textChannel.send(`⚠️ **${next.title}** çalınamadı, sıradakine geçiyorum.`).catch(() => {});
     playNext(guildId);
@@ -302,7 +341,10 @@ function baglantiKur(guild, voiceChannel, player) {
 }
 
 function createState(guild, voiceChannel, textChannel) {
-  const player = createAudioPlayer();
+  // Varsayılan 5 kare (~100 ms) veri gelmezse oynatıcı şarkıyı bitmiş sayıp Idle'a geçiyor ve playNext
+  // sıradakine atlıyor. Ağ/yt-dlp kısa takılınca şarkı atlamasın diye tolerans yükseltildi; şarkı gerçekten
+  // bittiğinde akış kapandığı için Idle yine anında tetiklenir.
+  const player = createAudioPlayer({ behaviors: { maxMissedFrames: 250 } });
   const connection = baglantiKur(guild, voiceChannel, player);
 
   const state = {
@@ -396,14 +438,16 @@ function resume(guildId) {
 }
 
 // Çalan şarkıyı belirtilen saniyeden itibaren yeniden başlatır.
+// Eski akış, yeni akış hazır olana kadar çalmaya devam eder. Önceden hemen öldürülüyordu: yeni akış
+// (yt-dlp + ffmpeg) saniyelerce gelmeyince oynatıcı boşa düşüp Idle oluyor, playNext de şarkıyı atlatıyordu.
 async function seek(guildId, saniye) {
   const state = getState(guildId);
   if (!state?.current) return false;
 
   const hedef = state.current;
-  state.killStream?.();
 
   let akis;
+  let girdi;
   try {
     akis = await ytdlp.createSeekStream(hedef.url, saniye, (err) => {
       logger.error('yt-dlp/ffmpeg seek hatası', err);
@@ -411,7 +455,10 @@ async function seek(guildId, saniye) {
         state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi (${err.message}).`).catch(() => {});
       }
     });
+    // Opus paketleri kopyalandıysa (Ogg) türü tespit edilip olduğu gibi gönderilir; yoksa ham PCM'dir.
+    girdi = akis.opus ? await akisiTani(akis.stream) : { stream: akis.stream, type: StreamType.Raw };
   } catch (err) {
+    akis?.kill();
     logger.error('Seek akışı başlatılamadı', err);
     return false;
   }
@@ -422,12 +469,77 @@ async function seek(guildId, saniye) {
     return false;
   }
 
+  // Yeni akış hazır: önce oynatıcıya veriyoruz (eski kaynağı o bırakır), sonra eski süreci öldürüyoruz.
+  const eskiKill = state.killStream;
   state.killStream = akis.kill;
   hedef.seekOffsetMs = saniye * 1000;
-  const resource = createAudioResource(akis.stream, { inputType: StreamType.Raw });
+  const resource = createAudioResource(girdi.stream, { inputType: girdi.type });
   state.player.play(resource);
+  eskiKill?.();
   refreshPanel(guildId);
   return true;
+}
+
+// Hızlı art arda tıklamalar tek bir seek'e birleştirilir: her tıklama ayrı yt-dlp/ffmpeg başlatırsa
+// süreçler birbirine girip ses donuyordu. Hedef saniye tıklamalar boyunca birikir, kısa bir sessizlikten
+// sonra bir kez gidilir; seek sürerken gelen tıklamalar bitince bir tur daha çalıştırılır.
+const SEEK_BEKLEME_MS = 500;
+
+async function seekDongusu(guildId, state, durum) {
+  durum.calisiyor = true;
+  for (;;) {
+    const hedef = durum.hedef;
+    const bekleyenler = durum.bekleyenler;
+    durum.bekleyenler = [];
+    durum.degisti = false;
+
+    let sonuc = false;
+    // Bekleme sırasında şarkı değiştiyse eski şarkının hedefine gitmeyelim.
+    if (getState(guildId) === state && state.current === durum.parca) {
+      try {
+        sonuc = await seek(guildId, hedef);
+      } catch (err) {
+        logger.error('Seek işlenemedi', err);
+      }
+    }
+    bekleyenler.forEach((coz) => coz(sonuc));
+
+    if (!durum.degisti) break;
+  }
+  if (state.seekDurum === durum) state.seekDurum = null;
+}
+
+// Çalma konumunu `delta` saniye kaydırır (negatif = geri). Dönen söz, birleştirilen seek bitince çözülür.
+function seekBy(guildId, delta) {
+  const state = getState(guildId);
+  if (!state?.current) return Promise.resolve(false);
+
+  if (!state.seekDurum) {
+    state.seekDurum = {
+      parca: state.current,
+      hedef: panel.elapsedSaniye(state),
+      timer: null,
+      bekleyenler: [],
+      calisiyor: false,
+      degisti: false,
+    };
+  }
+  const durum = state.seekDurum;
+
+  const sure = state.current.duration;
+  let hedef = Math.max(0, durum.hedef + delta);
+  if (Number.isFinite(sure)) hedef = Math.min(hedef, Math.max(0, sure - 2));
+  durum.hedef = hedef;
+
+  return new Promise((coz) => {
+    durum.bekleyenler.push(coz);
+    if (durum.calisiyor) {
+      durum.degisti = true;
+      return;
+    }
+    clearTimeout(durum.timer);
+    durum.timer = setTimeout(() => seekDongusu(guildId, state, durum), SEEK_BEKLEME_MS);
+  });
 }
 
 function setLoop(guildId, mod) {
@@ -501,6 +613,7 @@ module.exports = {
   pause,
   resume,
   seek,
+  seekBy,
   setLoop,
   toggleAutoplay,
   shuffle,
