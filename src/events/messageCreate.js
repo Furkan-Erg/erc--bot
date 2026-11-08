@@ -82,10 +82,31 @@ async function handleAfk(message, isCommand) {
   }
 }
 
+// Her mesajda veritabanına gitmemek için son XP zamanı bellekte de tutuluyor; çoğu mesaj cooldown
+// içinde olduğundan DB'ye (INSERT + SELECT) hiç dokunmadan çıkılır. Restart sonrası DB'deki değer geçerli.
+const sonXpZamani = new Map();
+
+function xpHafizasiniTemizle(simdi) {
+  for (const [anahtar, zaman] of sonXpZamani) {
+    if (simdi - zaman >= XP_COOLDOWN_MS) sonXpZamani.delete(anahtar);
+  }
+}
+
 async function awardXp(message) {
   const { guildId, author } = message;
+  const anahtar = `${guildId}:${author.id}`;
+  const simdi = Date.now();
+
+  const bellekteki = sonXpZamani.get(anahtar);
+  if (bellekteki && simdi - bellekteki < XP_COOLDOWN_MS) return;
+
   const last = levelsRepo.getLastXpAt(guildId, author.id);
-  if (last && Date.now() - last < XP_COOLDOWN_MS) return;
+  if (last && simdi - last < XP_COOLDOWN_MS) {
+    sonXpZamani.set(anahtar, last);
+    return;
+  }
+  if (sonXpZamani.size > 5000) xpHafizasiniTemizle(simdi);
+  sonXpZamani.set(anahtar, simdi);
 
   const oncekiSeviye = levelInfo(levelsRepo.getXp(guildId, author.id)).level;
   const kazanc = MIN_XP + Math.floor(Math.random() * (MAX_XP - MIN_XP + 1));
@@ -146,7 +167,8 @@ module.exports = {
       logger.info(`Komut "${commandName}" — sunucu: ${message.guild?.name}, kanal: #${message.channel?.name}, kullanıcı: ${message.author.tag}`);
     }
 
-    const optionsMeta = command.data.toJSON().options || [];
+    // Komut tanımı değişmediği için seçenek şeması her mesajda yeniden serileştirilmek yerine bir kez hesaplanır.
+    const optionsMeta = (command.optionsMeta ??= command.data.toJSON().options || []);
     const values = parseOptions(rawArgs, optionsMeta, message);
     const ctx = createMessageContext(message, values);
 
