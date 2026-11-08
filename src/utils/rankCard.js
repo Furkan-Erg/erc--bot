@@ -1,3 +1,5 @@
+const { pngBuffer } = require('./pngBuffer');
+
 const GENISLIK = 800;
 const YUKSEKLIK = 240;
 const FONT = '"DejaVu Sans", "Noto Sans", Arial, sans-serif';
@@ -84,7 +86,7 @@ async function renderRankCard({ username, avatarUrl, level, current, needed, ran
   ctx.fillStyle = '#b5bac1';
   ctx.fillText(`${current} / ${needed} XP`, barX + barW, barY + barH + 26);
 
-  return canvas.toBuffer('image/png');
+  return pngBuffer(canvas);
 }
 
 module.exports = { renderRankCard };

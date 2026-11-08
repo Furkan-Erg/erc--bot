@@ -3,6 +3,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { createCanvas, loadImage } = require('canvas');
 const logger = require('./logger');
+const { pngBuffer } = require('./pngBuffer');
 
 // İndirilen görseller küçültülüp burada saklanıyor; data/ Docker'da kalıcı volume.
 const ONBELLEK_DIZINI = path.join(__dirname, '..', '..', 'data', 'cs2-maps');
@@ -50,7 +51,7 @@ async function onbellekOlustur(harita) {
   kirparakCiz(canvas.getContext('2d'), image, 0, 0, ONBELLEK_G, ONBELLEK_Y);
 
   dizinHazirla();
-  await fsp.writeFile(hedef, canvas.toBuffer('image/png'));
+  await fsp.writeFile(hedef, await pngBuffer(canvas));
   return hedef;
 }
 
@@ -148,7 +149,7 @@ async function haritaIzgarasi(haritalar, seciliKeyler = []) {
     if (isaretli) onayIsaretiCiz(ctx, x + HUCRE_G - 26, y + 26);
   }
 
-  return canvas.toBuffer('image/png');
+  return pngBuffer(canvas);
 }
 
 module.exports = { haritaIzgarasi };
