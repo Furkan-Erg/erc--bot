@@ -72,9 +72,25 @@ git pull   # ya da dosyaları yeniden yükle
 docker-compose up -d --build
 ```
 
+### YouTube "Sign in to confirm you're not a bot" hatası
+
+VPS'in IP'si bir veri merkezine ait olduğu için YouTube bazı istekleri bot doğrulamasına sokuyor ve şarkı çekilemiyor
+("... çekilemedi: YouTube bot doğrulaması istedi"). Çözüm, oturum açmış bir tarayıcıdan dışa aktarılan çerez dosyası:
+
+1. Ana hesabın değil, **ayrı (yan) bir Google hesabının** oturumunu aç: çerezle yapılan yoğun istek hesabı işaretleyebilir.
+2. Gizli pencerede o hesapla youtube.com'a gir, yt-dlp'nin önerdiği yolla çerezleri Netscape biçiminde dışa aktar
+   (https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies), pencereyi kapat (çerezler dönmesin).
+3. Dosyayı VPS'te `secrets/youtube-cookies.txt` olarak bırak (proje dizininde; `secrets/` gitignore ve dockerignore'da):
+   `scp youtube-cookies.txt markahost:/home/furkan/ercu-bot/secrets/`
+4. `docker compose up -d` (yeniden derleme gerekmez; compose `./secrets`'i salt okunur bağlar). Bot dosyayı kendisi bulur;
+   yenisi bırakılınca bir sonraki şarkıda onu kullanır. Başka yerde duruyorsa `.env`'e `YTDLP_COOKIES=/yol` yazılır.
+
+yt-dlp her build'de son sürüme güncellenir (Dockerfile, sürümün sağlama dosyasına bağlı katman); hata çerezle de sürerse
+yeni bir yt-dlp sürümü çıkmış olabilir: `docker compose build && docker compose up -d`.
+
 ## Notlar
 
-- `.env` dosyasını asla commit'leme — zaten gitignore'da.
+- `.env` dosyasını asla commit'leme — zaten gitignore'da. Çerez dosyası (`secrets/`) da öyle.
 - `canvas` (`!caption`, `!capsle` tarafından kullanılıyor) için Alpine tabanlı Docker build'i VPS'inde yavaş çalışıyor ya da başarısız oluyorsa, Dockerfile'ın base image'ını `node:20-bookworm-slim` yap ve `apk add` satırını `apt-get install -y python3 make g++ libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev` ile değiştir.
 - `!play` müzik komutu ses dönüştürme için `ffmpeg-static` paketinin indirdiği ffmpeg'i kullanır — ayrıca sistemde ffmpeg kurulu olmasına gerek yok.
 - Önekli komutlarda ephemeral (özel/gizli) yanıt diye bir şey yok — her yanıt normal, herkese görünen bir kanal mesajıdır.

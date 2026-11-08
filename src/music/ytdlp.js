@@ -1,4 +1,6 @@
+const fs = require('node:fs');
 const os = require('node:os');
+const path = require('node:path');
 const { spawn, execFile } = require('child_process');
 
 // YouTube'dan akış çekmek için yt-dlp kullanıyoruz; ytdl-core YouTube değişikliklerine yetişemiyor.
@@ -13,11 +15,53 @@ const GIZLI_BASLIKLAR = new Set(['[Private video]', '[Deleted video]']);
 // kodlamak gerekmez (hem CPU hem de kalite kaybı sıfır). Opus yoksa en iyi sese düşülür.
 const SES_FORMATI = 'bestaudio[acodec=opus]/bestaudio/best';
 
+// Sunucu veri merkezi IP'sinden çıktığı için YouTube zaman zaman "Sign in to confirm you're not a bot" diyor;
+// çözümü oturum açmış bir tarayıcıdan dışa aktarılmış çerez dosyası. Dosya `YTDLP_COOKIES` ile ya da varsayılan
+// yere (`secrets/youtube-cookies.txt`, compose'da salt okunur bağlı) konur; yenisi bırakılınca sonraki istek onu kullanır.
+// yt-dlp çıkarken çerez dosyasını yeniden yazar ve aynı anda birden çok süreç çalışabilir (akış, şarkı bilgisi,
+// otomatik oynatma ön yüklemesi): her süreç kendi yazılabilir kopyasını alır, süreç bitince kopya silinir.
+const COOKIES_SRC = process.env.YTDLP_COOKIES || path.join(__dirname, '..', '..', 'secrets', 'youtube-cookies.txt');
+let kopyaSayaci = 0;
+
+function cerezVar() {
+  try {
+    return fs.statSync(COOKIES_SRC).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Dönen `temizle` süreç bittiğinde (başarılı ya da hatalı) çağrılır.
 function baseArgs({ playlist = false } = {}) {
   // YouTube imza çözümü için JS runtime gerekiyor; imajda zaten node var
   const args = [playlist ? '--yes-playlist' : '--no-playlist', '--no-warnings', '--quiet', '--js-runtimes', 'node'];
-  if (process.env.YTDLP_COOKIES) args.push('--cookies', process.env.YTDLP_COOKIES);
-  return args;
+  let temizle = () => {};
+  if (cerezVar()) {
+    const kopya = path.join(os.tmpdir(), `ercu-bot-cookies-${process.pid}-${++kopyaSayaci}.txt`);
+    try {
+      fs.copyFileSync(COOKIES_SRC, kopya);
+      args.push('--cookies', kopya);
+      temizle = () => fs.rm(kopya, { force: true }, () => {});
+    } catch {
+      args.push('--cookies', COOKIES_SRC); // kopya yazılamadıysa kaynağın kendisi (yt-dlp geri yazamazsa yalnız uyarır)
+    }
+  }
+  return { args, temizle };
+}
+
+// Kanala yazılacak kısa hata: yt-dlp'nin çok satırlı, bağlantılı stderr'i yerine ne olduğunu söyleyen tek cümle.
+// Ayrıntı yine log'a gider (logger.error tam hatayı yazar).
+function kisaHata(err) {
+  const mesaj = String(err?.message ?? err ?? '');
+  if (/Sign in to confirm you.?re not a bot/i.test(mesaj)) {
+    return cerezVar()
+      ? "YouTube bot doğrulaması istedi; sunucudaki çerez dosyasının süresi dolmuş olabilir, yenisi gerekiyor"
+      : "YouTube bot doğrulaması istedi; sunucuda çerez dosyası yok (secrets/youtube-cookies.txt)";
+  }
+  if (/Video unavailable|Private video|has been removed/i.test(mesaj)) return 'video kaldırılmış ya da gizli';
+  if (/age.?restricted|confirm your age/i.test(mesaj)) return 'yaş sınırlı video (çerez dosyası gerekiyor)';
+  // İlk cümle, sondaki noktasız (çağıran kendi noktasını koyar).
+  return mesaj.replace(/^ERROR:\s*(\[[^\]]+\]\s*[\w-]+:\s*)?/, '').split(/(?<=\.)\s|\n/)[0].slice(0, 150).replace(/\.+$/, '');
 }
 
 // Bilgi/liste sorguları arka plan işi: aynı anda en fazla birkaçı çalışır ve düşük öncelikli olur ki
@@ -56,11 +100,15 @@ function oncelikDusur(proc) {
   }
 }
 
-function ytdlpCalistir(args, secenekler, sirayla = onPlanSirasi) {
+// `ekArgs` temel argümanlardan (çerez, JS runtime vb.) sonra eklenir. Çerez kopyası süreç gerçekten
+// başlayınca oluşturulur (sırada bekleyen iş geçici dosya tutmaz) ve süreç bitince silinir.
+function ytdlpCalistir(ekArgs, secenekler, { playlist = false, sirayla = onPlanSirasi } = {}) {
   return sirayla(
     () =>
       new Promise((coz, reddet) => {
-        const proc = execFile(YTDLP_PATH, args, secenekler, (err, stdout, stderr) => {
+        const { args, temizle } = baseArgs({ playlist });
+        const proc = execFile(YTDLP_PATH, [...args, ...ekArgs], secenekler, (err, stdout, stderr) => {
+          temizle();
           if (err) return reddet(new Error(stderr?.trim() || err.message));
           coz(stdout);
         });
@@ -70,10 +118,9 @@ function ytdlpCalistir(args, secenekler, sirayla = onPlanSirasi) {
 }
 
 async function getInfo(url) {
-  const stdout = await ytdlpCalistir(
-    [...baseArgs(), '--skip-download', '--print', '%(webpage_url)s\n%(title)s\n%(duration)s', url],
-    { timeout: 30_000 },
-  );
+  const stdout = await ytdlpCalistir(['--skip-download', '--print', '%(webpage_url)s\n%(title)s\n%(duration)s', url], {
+    timeout: 30_000,
+  });
   const [videoUrl, title, sureStr] = stdout.trim().split('\n');
   const sure = Number(sureStr);
   return { url: videoUrl, title, duration: Number.isFinite(sure) ? sure : null };
@@ -82,7 +129,6 @@ async function getInfo(url) {
 async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi) {
   const stdout = await ytdlpCalistir(
     [
-      ...baseArgs({ playlist: true }),
       '--flat-playlist',
       '--playlist-end',
       String(limit),
@@ -92,7 +138,7 @@ async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi) {
       url,
     ],
     { timeout: 60_000, maxBuffer: 5 * 1024 * 1024 },
-    sirayla,
+    { playlist: true, sirayla },
   );
 
   return stdout
@@ -151,7 +197,7 @@ function getDirectStreamInfo(url) {
 }
 
 async function dogrudanBilgiCek(url) {
-  const stdout = await ytdlpCalistir([...baseArgs(), '-f', SES_FORMATI, '-j', url], {
+  const stdout = await ytdlpCalistir(['-f', SES_FORMATI, '-j', url], {
     timeout: 30_000,
     maxBuffer: 5 * 1024 * 1024,
   });
@@ -199,6 +245,7 @@ async function createSeekStream(url, saniye, onError) {
     .map(([ad, deger]) => `${ad}: ${deger}`)
     .join('\r\n');
   if (digerHeaderlar) ffmpegArgs.push('-headers', `${digerHeaderlar}\r\n`);
+
   // Paket kopyalamada tek başına `-ss` yetmiyor: ffmpeg WebM'in "Cues" noktasına (YouTube'da ~10 sn arayla)
   // atlayıp o noktadan başlıyor ve araya düşen paketleri atmıyor; denemede -ss 30 aslında 20. saniyeden
   // başladı (panel saati ve ±10/30 sn butonları şaşardı). Bu yüzden girişte hedeften 12 sn önceye atlanıp
@@ -239,7 +286,8 @@ async function createSeekStream(url, saniye, onError) {
 }
 
 function createStream(url, onError) {
-  const proc = spawn(YTDLP_PATH, [...baseArgs(), '-f', SES_FORMATI, '-o', '-', url], {
+  const { args, temizle } = baseArgs();
+  const proc = spawn(YTDLP_PATH, [...args, '-f', SES_FORMATI, '-o', '-', url], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -247,8 +295,12 @@ function createStream(url, onError) {
   proc.stderr.on('data', (chunk) => {
     stderr += chunk;
   });
-  proc.on('error', (err) => onError(err));
+  proc.on('error', (err) => {
+    temizle();
+    onError(err);
+  });
   proc.on('close', (code) => {
+    temizle();
     if (code && code !== 0 && !proc.killed) {
       onError(new Error(stderr.trim().split('\n').pop() || `yt-dlp ${code} koduyla çıktı`));
     }
@@ -259,4 +311,4 @@ function createStream(url, onError) {
   return { stream: proc.stdout, kill: () => proc.kill('SIGKILL') };
 }
 
-module.exports = { getInfo, getPlaylist, getMix, videoIdOf, createStream, createSeekStream, MAX_PLAYLIST };
+module.exports = { getInfo, getPlaylist, getMix, videoIdOf, createStream, createSeekStream, kisaHata, MAX_PLAYLIST };

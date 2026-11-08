@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { getInfo, getPlaylist, MAX_PLAYLIST } = require('../../music/ytdlp');
+const { getInfo, getPlaylist, kisaHata, MAX_PLAYLIST } = require('../../music/ytdlp');
 const ytSearch = require('yt-search');
 const { errorEmbed, successEmbed, infoEmbed } = require('../../utils/embeds');
 const musicManager = require('../../music/musicManager');
@@ -77,7 +77,11 @@ module.exports = {
     } catch (err) {
       // Hata yutulunca "çekemedim" mesajının sebebi loglarda görünmüyordu.
       logger.error(`Şarkı çözümlenemedi (sorgu: "${query}")`, err);
-      await interaction.editReply({ embeds: [errorEmbed('Şarkıyı bulamadım ya da çekemedim, başka bir şey dene.')] });
+      // Bot doğrulamasında "başka bir şey dene" yanıltıcı: hiçbir şarkı çekilemez, sebebi söylenir.
+      const bot = /Sign in to confirm you.?re not a bot/i.test(String(err?.message));
+      await interaction.editReply({
+        embeds: [errorEmbed(bot ? `Şarkıyı çekemedim: ${kisaHata(err)}.` : 'Şarkıyı bulamadım ya da çekemedim, başka bir şey dene.')],
+      });
       return;
     }
 

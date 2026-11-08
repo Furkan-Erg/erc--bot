@@ -26,6 +26,11 @@ pipeline {
         }
 
         stage('Deploy') {
+            // Sunucuya yalnız main'in build'i çıkar. Job çok dallı değil (BRANCH_NAME boş), bu yüzden
+            // `when { branch 'main' }` yerine SCM'in verdiği GIT_BRANCH'e ("origin/main") bakılıyor.
+            when {
+                expression { env.GIT_BRANCH in ['origin/main', 'main'] || env.BRANCH_NAME == 'main' }
+            }
             steps {
                 sh '''
                     cd /home/furkan/ercu-bot

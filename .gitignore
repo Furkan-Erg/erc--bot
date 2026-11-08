@@ -2,3 +2,8 @@ node_modules/
 .env
 data/
 npm-debug.log*
+# YouTube çerez dosyası (oturum bilgisi: repoya girmez)
+secrets/
+
+# agentkit görev çıktıları (rapor, diff, denetim günlüğü)
+/tasks/
