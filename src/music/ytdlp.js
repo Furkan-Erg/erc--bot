@@ -250,6 +250,10 @@ function ilkVeriyiBekle(stream, ms, ad) {
       const gecis = new PassThrough();
       gecis.write(parca);
       stream.pipe(gecis);
+      // Kaynak hatayla/'end' vermeden kapanırsa pipe geçişi bitirmez; çalma sonsuza dek takılı kalmasın.
+      const kapat = () => gecis.writableEnded || gecis.end();
+      stream.once('error', kapat);
+      stream.once('close', kapat);
       coz(gecis);
     };
     const bitti = () => {
@@ -485,7 +489,7 @@ function createStream(url, onError) {
 
 // Geçici sorunlarda (yavaş başlama, anlık YouTube reddi) yeniden denemek işe yarar; video kalıcı olarak erişilemezse yaramaz.
 function yenidenDenenebilirMi(err) {
-  return !/Video unavailable|Private video|has been removed|age.?restricted|confirm your age|not available|members-only|copyright/i.test(
+  return !/Video unavailable|Sign in to confirm|not a bot|Private video|has been removed|age.?restricted|confirm your age|not available|members-only|copyright/i.test(
     String(err?.message ?? err ?? ''),
   );
 }

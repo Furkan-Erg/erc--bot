@@ -146,7 +146,11 @@ class PaketOkuyucu extends Readable {
 function onbellekKur(url, kaynak, kill) {
   const onb = new PaketOnbellegi(url);
   onb.kaynak = kaynak;
-  onb.kill = kill;
+  // Akış bitmeden öldürülürse (skip vb.) demuxer yine 'end' verir; o durumda önbellek tam sayılmamalı.
+  onb.kill = () => {
+    if (!onb.tamamlandi) onb.eksik = true;
+    kill();
+  };
 
   const demuxer = new prism.opus.WebmDemuxer();
   demuxer.on('data', (paket) => onb.ekle(Buffer.from(paket))); // kopya: demuxer'ın iç tamponuna bağlı kalınmasın
@@ -156,7 +160,14 @@ function onbellekKur(url, kaynak, kill) {
     onb.eksik = true;
     onb.bitir();
   });
-  kaynak.on('error', () => {});
+  // Kaynak hatayla kapanırsa pipe demuxer'ı bitirmez; okuyucu sonsuza dek beklemesin.
+  kaynak.on('error', () => {
+    onb.eksik = true;
+    onb.bitir();
+  });
+  kaynak.on('close', () => {
+    if (!onb.tamamlandi) setTimeout(() => onb.bitir(), 500);
+  });
   kaynak.pipe(demuxer);
   return onb;
 }

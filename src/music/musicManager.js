@@ -286,6 +286,8 @@ async function akisBaslat(state, next, guildId) {
       logger.error('yt-dlp hatası', err);
       // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
       next.failed = true;
+      // İndirme yarıda kesildiyse bellekteki paketler eksiktir: tekrar çalma/sarma bunlara güvenmesin.
+      if (state.onbellek?.url === next.url) state.onbellek.eksik = true;
       if (state.current === next) {
         state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
       }
@@ -343,6 +345,9 @@ async function playNext(guildId) {
   }
   if (!next) {
     state.current = null;
+    // Boşta beklerken paket önbelleği (≤20 MB) bellekte tutulmasın.
+    state.onbellek?.temizle();
+    state.onbellek = null;
     // Sıra bitince hemen çıkmıyoruz; kısa süre içinde yeni şarkı eklenirse (enqueueMany bu timer'ı
     // temizler) kanalda kalınmaya devam edilsin diye bekliyoruz.
     clearTimeout(state.queueBittiTimer);
@@ -420,6 +425,7 @@ async function playNext(guildId) {
       // YouTube'a yeni istek gerekmez. Uzun içerikler ya da süresi bilinmeyenler aşağıdaki gibi akıştan çalınır.
       const onb = paketOnbellegi.onbellekKur(next.url, kaynak, kill);
       state.onbellek = onb;
+      state.killStream = onb.kill;
       logger.info(`Akış türü [${next.title}]: ${type} (bellek önbelleği açık)`);
       resource = createAudioResource(onb.okuyucu(0), { inputType: StreamType.Opus });
     } else {
