@@ -36,6 +36,11 @@ pipeline {
                     cd /home/furkan/ercu-bot
                     git pull
                     docker compose up -d --build
+
+                    # Her build'in bıraktığı eski imajları temizle ki disk dolmasın: askıda kalan katmanlar ve son 3
+                    # dışındaki ercu-bot:<build no> etiketleri. Başarısız olursa deploy'u bozmasın.
+                    docker image prune -f || true
+                    docker images ercu-bot --format '{{.Tag}}' | grep -E '^[0-9]+$' | sort -rn | tail -n +4 | xargs -r -I{} docker rmi ercu-bot:{} || true
                 '''
             }
         }

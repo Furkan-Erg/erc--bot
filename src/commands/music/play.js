@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { getInfo, getPlaylist, kisaHata, MAX_PLAYLIST } = require('../../music/ytdlp');
-const ytSearch = require('yt-search');
+const { ara } = require('../../music/arama');
+const config = require('../../config');
 const { errorEmbed, successEmbed, infoEmbed } = require('../../utils/embeds');
 const musicManager = require('../../music/musicManager');
 const logger = require('../../utils/logger');
@@ -21,7 +22,8 @@ async function resolveTracks(query) {
   if (isYoutubeUrl(query)) {
     return [await getInfo(query)];
   }
-  const result = await ytSearch(query);
+  // Arama ayrı thread'de (ana thread bloke olmasın), zaman aşımı korumalı.
+  const result = await ara(query);
   const video = result.videos?.[0];
   return video ? [{ url: video.url, title: video.title, duration: video.seconds || null }] : [];
 }
@@ -66,22 +68,44 @@ module.exports = {
       return;
     }
 
+    // Bot başka bir sesli kanaldaysa istek o kanala eklenip kullanıcı hiçbir şey duymuyordu ("Sıraya attım" der).
+    const mevcut = musicManager.getState(interaction.guildId);
+    if (mevcut?.voiceChannel && mevcut.voiceChannel.id !== voiceChannel.id) {
+      if (mevcut.current || mevcut.queue.length > 0) {
+        await interaction.reply({
+          embeds: [
+            errorEmbed(
+              `Bot şu an **${mevcut.voiceChannel.name}** kanalında çalıyor. Oraya gir ya da önce \`${config.prefix}stop\` ile durdurup tekrar iste.`
+            ),
+          ],
+        });
+        return;
+      }
+      // Boşta bekleyen bot (sıra bitmiş): bu kanaldan yeni oturum açılsın.
+      musicManager.stop(interaction.guildId);
+    }
+
     const query = interaction.options.getString('sarki', true);
     await interaction.deferReply();
 
     logger.info(`!play — sunucu: ${interaction.guild?.name}, kullanıcı: ${interaction.user.tag}, sorgu: "${query}"`);
 
     let tracks;
+    const cozumlemeBas = Date.now();
     try {
       tracks = await resolveTracks(query);
+      logger.info(`!play çözümleme ${Date.now() - cozumlemeBas} ms (sorgu: "${query}")`);
     } catch (err) {
       // Hata yutulunca "çekemedim" mesajının sebebi loglarda görünmüyordu.
       logger.error(`Şarkı çözümlenemedi (sorgu: "${query}")`, err);
       // Bot doğrulamasında "başka bir şey dene" yanıltıcı: hiçbir şarkı çekilemez, sebebi söylenir.
       const bot = /Sign in to confirm you.?re not a bot/i.test(String(err?.message));
-      await interaction.editReply({
-        embeds: [errorEmbed(bot ? `Şarkıyı çekemedim: ${kisaHata(err)}.` : 'Şarkıyı bulamadım ya da çekemedim, başka bir şey dene.')],
-      });
+      // Zaman aşımı "bulunamadı" demek değil: YouTube/yt-dlp o an cevap vermedi, tekrar denemek yeterli olabilir.
+      const zamanAsimi = /cevap vermedi|timed out|timeout|ETIMEDOUT|ECONNRESET|killed/i.test(String(err?.message));
+      let mesaj = 'Şarkıyı bulamadım ya da çekemedim, başka bir şey dene.';
+      if (bot) mesaj = `Şarkıyı çekemedim: ${kisaHata(err)}.`;
+      else if (zamanAsimi) mesaj = 'YouTube şu an cevap vermedi, birkaç saniye sonra tekrar dene.';
+      await interaction.editReply({ embeds: [errorEmbed(mesaj)] });
       return;
     }
 
@@ -116,8 +140,10 @@ module.exports = {
     const { title } = tracks[0];
     await interaction.editReply({
       embeds: [
+        // Ses bağlantısı kurulup şarkı indirilmeden "çalıyor" demek yanıltıcıydı (bağlantı sorunlu olunca
+        // kullanıcı çalıyor sanıp bekliyordu). Çalmaya başlayınca müzik paneli ayrıca gönderiliyor.
         startedImmediately
-          ? successEmbed(`🎶 Şimdi çalıyor: **${title}**`)
+          ? successEmbed(`🎶 Hazırlanıyor: **${title}**\nSes kanalına bağlanıp şarkı indirilince çalmaya başlayacak.`)
           : infoEmbed(`➕ Sıraya attım kanka, biraz bekle: **${title}**`),
       ],
     });

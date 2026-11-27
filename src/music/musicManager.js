@@ -14,11 +14,15 @@ const { PermissionFlagsBits } = require('discord.js');
 const ytdlp = require('./ytdlp');
 const panel = require('./panel');
 const kalite = require('./kalite');
+const paketOnbellegi = require('./paketOnbellegi');
 const logger = require('../utils/logger');
 
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
 const BOS_KANAL_BEKLEME_MS = 30_000;
-const SIRA_BITTI_BEKLEME_MS = 15_000;
+// Sıra bitince bot hemen çıkmaz: her yeni istek yeni bir ses bağlantısı (el sıkışma) demek ve el sıkışma bazen
+// takılıyor. Kısa süre kalmak art arda isteklerde bağlantıyı yeniden kurmayı önler. Kanalda kimse kalmazsa
+// bot yine 30 sn sonra çıkar (BOS_KANAL_BEKLEME_MS).
+const SIRA_BITTI_BEKLEME_MS = Number(process.env.SIRA_BITTI_BEKLEME_MS) || 120_000;
 // Otomatik oynatma aynı şarkıları döndürmesin diye son çalınanlar hatırlanıyor.
 const CALINAN_HAFIZA = 200;
 // Mix listelerinde ara sıra 1 saatlik derlemeler çıkıyor; otomatik oynatmada onlar atlanıyor.
@@ -27,7 +31,10 @@ const OTOMATIK_EKLEYEN = '♾️ Otomatik oynatma';
 
 // yt-dlp takılırsa oynatıcı sonsuza kadar sessiz beklerdi; ilk veri bu sürede gelmezse şarkı hatalı sayılır.
 // Yavaş/yoğun sunucuda yt-dlp'nin imza çözümü bile 10-20 sn sürebildiği için süre cömert tutuluyor.
-const ILK_VERI_BEKLEME_MS = 45_000;
+const ILK_VERI_BEKLEME_MS = Number(process.env.ILK_VERI_BEKLEME_MS) || 45_000;
+// İlk veri gelmezse (yt-dlp takıldı, anlık YouTube reddi) akış bu kadar kez denenir.
+const AKIS_DENEME = 2;
+const bekle = (ms) => new Promise((coz) => setTimeout(coz, ms));
 
 // Akışın ilk baytlarına bakıp türünü (WebM/Ogg Opus ya da başka) tespit eder; zaman aşımı korumalı.
 function akisiTani(stream) {
@@ -95,6 +102,8 @@ function destroyState(guildId) {
     state.seekDurum = null;
   }
   removePanel(state);
+  state.onbellek?.temizle();
+  state.onbellek = null;
   try {
     state.killStream?.();
     state.player.stop(true);
@@ -124,13 +133,44 @@ const YEDEK_BOLGELER = (process.env.VOICE_REGIONS || 'rotterdam,frankfurt,milan,
   .map((b) => b.trim())
   .filter(Boolean);
 
-const BAGLANTI_BEKLEME_MS = 20_000;
+// Sağlıklı bir ses el sıkışması 1-3 sn sürer; bölge değişiminden sonra biraz daha uzun olabilir. 20 sn'de hata
+// mesajı ve bölge denemeleri çok geç geliyordu (4 bölge ≈ 100 sn sessizlik).
+const BAGLANTI_BEKLEME_MS = Number(process.env.VOICE_BAGLANTI_BEKLEME_MS) || 15_000;
 
-async function bolgeDegistirVeYenidenBagla(state, guildId) {
+// Bölge değişiminden sonra bağlantı kurulan bölge sunucu başına hatırlanır: sonraki oturumda ya da başka bir
+// kanalda önce o denenir, her seferinde listeyi baştan 15 sn'lik bekleyişlerle gezmek gerekmez.
+const calisanBolgeler = new Map();
+
+// Eski bağlantıyı yıkıp aynı kanala yeni bir bağlantı kurar.
+function baglantiyiYenile(state) {
+  try {
+    state.connection.destroy();
+  } catch {
+    // zaten kapanmış olabilir
+  }
+  state.connection = baglantiKur(state.voiceChannel.guild, state.voiceChannel, state.player);
+}
+
+async function bolgeDegistirVeYenidenBagla(state, guildId, zamanAsimi) {
   const kanal = state.voiceChannel;
   if (!kanal) return false;
 
-  const bolge = YEDEK_BOLGELER.find((b) => !state.denenenBolgeler.includes(b));
+  // Zaman aşımı değil de başka bir hata (DNS, geçici WebSocket hatası) ise bölgeye dokunmadan önce bir kez
+  // yeniden bağlanılır: bölge değişimi kalıcıdır ve kanaldaki herkesin bağlantısını kısa süre bozar.
+  if (!zamanAsimi && !state.duzYenidenDenendi) {
+    state.duzYenidenDenendi = true;
+    logger.info(`Ses bağlantısı bölge değiştirilmeden yeniden deneniyor (#${kanal.name}, ${kanal.guild.name})`);
+    state.textChannel.send('🔄 Ses bağlantısı kurulamadı, yeniden deniyorum…').catch(() => {});
+    baglantiyiYenile(state);
+    return true;
+  }
+
+  // Kanalın şu anki bölgesi bu oturumda zaten başarısız oldu: aynısını denemek 15 sn'yi boşa harcar.
+  const mevcutBolge = kanal.rtcRegion ?? null;
+  if (mevcutBolge && !state.denenenBolgeler.includes(mevcutBolge)) state.denenenBolgeler.push(mevcutBolge);
+
+  const adaylar = [calisanBolgeler.get(guildId), ...YEDEK_BOLGELER].filter(Boolean);
+  const bolge = adaylar.find((b) => !state.denenenBolgeler.includes(b));
   if (!bolge) return false;
 
   const izinler = kanal.permissionsFor(kanal.guild.members.me);
@@ -140,7 +180,11 @@ async function bolgeDegistirVeYenidenBagla(state, guildId) {
   }
 
   state.denenenBolgeler.push(bolge);
+  state.sonBolge = bolge;
   logger.info(`Ses bölgesi "${bolge}" olarak deneniyor (#${kanal.name}, ${kanal.guild.name})`);
+  state.textChannel
+    .send(`🔄 Ses sunucusuna bağlanamadım, kanalın bölgesini **${bolge}** olarak deniyorum…`)
+    .catch(() => {});
 
   try {
     await kanal.setRTCRegion(bolge, 'Otomatik ses sunucusuna bağlanılamadı');
@@ -149,13 +193,7 @@ async function bolgeDegistirVeYenidenBagla(state, guildId) {
     return false;
   }
 
-  try {
-    state.connection.destroy();
-  } catch {
-    // zaten kapanmış olabilir
-  }
-
-  state.connection = baglantiKur(kanal.guild, kanal, state.player);
+  baglantiyiYenile(state);
   return true;
 }
 
@@ -163,17 +201,21 @@ async function baglantiyiBekle(state, guildId) {
   for (;;) {
     try {
       await entersState(state.connection, VoiceConnectionStatus.Ready, BAGLANTI_BEKLEME_MS);
+      // Bölge değiştirilip bağlantı kurulduysa o bölge hatırlanır.
+      if (state.sonBolge) calisanBolgeler.set(guildId, state.sonBolge);
       return true;
     } catch (err) {
+      // entersState süre dolunca AbortError ile reddeder; başka hata (ağ/DNS) gerçek zaman aşımı değildir.
+      const zamanAsimi = err?.name === 'AbortError';
       logger.error(
-        `Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`,
+        `Sesli kanala bağlanılamadı (sunucu: ${guildId}, ${zamanAsimi ? 'zaman aşımı' : 'hata'}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`,
         err
       );
 
       // State bu arada yok edilmişse (stop, kanal boşaldı vb.) uğraşmayı bırak.
       if (getState(guildId) !== state) return false;
 
-      if (await bolgeDegistirVeYenidenBagla(state, guildId)) continue;
+      if (await bolgeDegistirVeYenidenBagla(state, guildId, zamanAsimi)) continue;
 
       const sebep = state.denenenBolgeler.length
         ? `Denediğim bölgeler: ${state.denenenBolgeler.join(', ')}. Kanalın **Bölge Geçersiz Kılma** ayarını elle değiştirmeyi dene.`
@@ -227,6 +269,58 @@ function calinanlaraEkle(state, track) {
   if (state.calinanlar.length > CALINAN_HAFIZA) state.calinanlar.shift();
 }
 
+// YouTube'dan şarkı akışını başlatır ve ilk verinin geldiğini doğrular. İlk veri gelmezse (yt-dlp takıldı ya da
+// veri vermeden kapandı) bir kez daha dener; böylece geçici bir sorun şarkıyı atlatmaz. Başlatma sırasında şarkı
+// atlandı/durduruldu ise `null` döner. Yeniden deneme sonuç vermezse hata fırlatır (sebep mesajında).
+async function akisBaslat(state, next, guildId) {
+  let sonHata = null;
+  for (let deneme = 1; deneme <= AKIS_DENEME; deneme++) {
+    let basladi = false;
+    let baslangicHatasi = null;
+    const { stream, kill, stderrSon, kapandi } = ytdlp.createStream(next.url, (err) => {
+      // Başlangıçtaki hatalar aşağıda (deneme döngüsünde) ele alınır; akış başladıktan sonraki kopmalar burada.
+      if (!basladi) {
+        baslangicHatasi = err;
+        return;
+      }
+      logger.error('yt-dlp hatası', err);
+      // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
+      next.failed = true;
+      // İndirme yarıda kesildiyse bellekteki paketler eksiktir: tekrar çalma/sarma bunlara güvenmesin.
+      if (state.onbellek?.url === next.url) state.onbellek.eksik = true;
+      if (state.current === next) {
+        state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
+      }
+    });
+    state.killStream = kill;
+
+    try {
+      // Akışın türü ilk baytlardan anlaşılır: YouTube Opus (WebM) verirse paketler Discord'a olduğu gibi gider
+      // (ffmpeg'le çözüp yeniden kodlama yok); başka bir biçimse ffmpeg'e dönüştürtülür.
+      const sonuc = await akisiTani(stream);
+      if ((stream.bytesRead ?? 0) === 0) {
+        // Veri gelmeden kapandı (yt-dlp hata verdi). Sebebi için süreç çıkışını kısa süre bekle.
+        await Promise.race([kapandi, bekle(1500)]);
+        throw baslangicHatasi ?? new Error(stderrSon() || 'akış veri vermeden kapandı');
+      }
+      basladi = true;
+      return { ...sonuc, kill };
+    } catch (err) {
+      kill();
+      // Zaman aşımında süreç öldürüldüğü için onError çağrılmaz; sebep stderr'den alınır.
+      sonHata = baslangicHatasi ?? (stderrSon() ? new Error(`${err.message}: ${stderrSon()}`) : err);
+
+      // Başlatma sırasında şarkı atlandı ya da durduruldu: hata değil, vazgeçildi.
+      if (getState(guildId) !== state || state.current !== next || state.skipRequested) return null;
+      if (deneme === AKIS_DENEME || !ytdlp.yenidenDenenebilirMi(sonHata)) throw sonHata;
+
+      logger.warn(`Şarkı başlatılamadı, yeniden deneniyor (${deneme}/${AKIS_DENEME}) [${next.title}]: ${sonHata.message}`);
+      state.textChannel.send(`⏳ **${next.title}** hazırlanırken takıldı, bir kez daha deniyorum…`).catch(() => {});
+    }
+  }
+  throw sonHata;
+}
+
 async function playNext(guildId) {
   const state = guildStates.get(guildId);
   if (!state) return;
@@ -251,6 +345,9 @@ async function playNext(guildId) {
   }
   if (!next) {
     state.current = null;
+    // Boşta beklerken paket önbelleği (≤20 MB) bellekte tutulmasın.
+    state.onbellek?.temizle();
+    state.onbellek = null;
     // Sıra bitince hemen çıkmıyoruz; kısa süre içinde yeni şarkı eklenirse (enqueueMany bu timer'ı
     // temizler) kanalda kalınmaya devam edilsin diye bekliyoruz.
     clearTimeout(state.queueBittiTimer);
@@ -269,25 +366,52 @@ async function playNext(guildId) {
   calinanlaraEkle(state, next);
   state.killStream?.();
 
+  // Önceki şarkının paket önbelleği: aynı şarkı yeniden çalınıyorsa (tekrar modu) YouTube'a gitmeden oradan çalınır,
+  // değilse bellek bırakılır.
+  let tekrarOnbellek = null;
+  if (state.onbellek) {
+    const onb = state.onbellek;
+    if (onb.url === next.url && onb.tamamlandi && !onb.eksik && !next.failed) {
+      tekrarOnbellek = onb;
+    } else {
+      onb.temizle();
+      state.onbellek = null;
+    }
+  }
+
   // Bağlantı hazır olmadan çalmaya başlarsak ses gitmiyor ve hiçbir hata da çıkmıyor.
   if (!(await baglantiyiBekle(state, guildId))) return;
 
+  // Bağlantı beklenirken durum yok edildiyse ya da şarkı atlandıysa (skip bekleyen şarkıyı da geçer) vazgeç.
+  if (getState(guildId) !== state || state.current !== next) return;
+  if (state.skipRequested) {
+    playNext(guildId);
+    return;
+  }
+
   try {
-    const { stream, kill } = ytdlp.createStream(next.url, (err) => {
-      logger.error('yt-dlp hatası', err);
-      // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
-      next.failed = true;
-      if (state.current === next) {
-        state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
+    if (tekrarOnbellek) {
+      if (getState(guildId) !== state || state.current !== next || state.skipRequested || tekrarOnbellek.temizlendi) {
+        if (getState(guildId) === state && state.current === next) playNext(guildId);
+        return;
       }
-    });
-    state.killStream = kill;
+      logger.info(`Önbellekten tekrar çalınıyor (YouTube'a gidilmedi) [${next.title}]`);
+      state.player.play(createAudioResource(tekrarOnbellek.okuyucu(0), { inputType: StreamType.Opus }));
+      sendPanel(state);
+      otomatikOnYukle(state);
+      return;
+    }
 
-    // Akışın türü ilk baytlardan anlaşılır: YouTube Opus (WebM) verirse paketler Discord'a olduğu gibi
-    // gider (ffmpeg'le çözüp yeniden kodlama yok); başka bir biçimse ffmpeg'e dönüştürtülür.
-    const { stream: kaynak, type } = await akisiTani(stream);
+    const baslatilan = await akisBaslat(state, next, guildId);
 
-    // Tanıma beklenirken şarkı atlandıysa ya da bağlantı kapandıysa bu akışı çalma.
+    // Başlatma sırasında şarkı atlandıysa ya da durduruldu: bu akış çalınmaz.
+    if (!baslatilan) {
+      if (getState(guildId) === state && state.current === next) playNext(guildId);
+      return;
+    }
+    const { stream: kaynak, type, kill } = baslatilan;
+
+    // Başlatma bittiği anda şarkı atlandıysa ya da bağlantı kapandıysa bu akışı çalma.
     if (getState(guildId) !== state || state.current !== next || state.skipRequested) {
       kill();
       if (getState(guildId) === state && state.current === next) playNext(guildId);
@@ -295,8 +419,19 @@ async function playNext(guildId) {
     }
 
     // "webm/opus" = dönüştürmesiz doğrudan geçiş; "arbitrary" = ffmpeg ile dönüştürülen yedek yol.
-    logger.info(`Akış türü [${next.title}]: ${type}`);
-    const resource = createAudioResource(kaynak, { inputType: type });
+    let resource;
+    if (type === StreamType.WebmOpus && paketOnbellegi.onbellegeUygunMu(next.duration)) {
+      // Opus paketleri bellekte tutulur (süre sınırın altındaysa): çalma ve sarma bu diziden yapılır, sarma için
+      // YouTube'a yeni istek gerekmez. Uzun içerikler ya da süresi bilinmeyenler aşağıdaki gibi akıştan çalınır.
+      const onb = paketOnbellegi.onbellekKur(next.url, kaynak, kill);
+      state.onbellek = onb;
+      state.killStream = onb.kill;
+      logger.info(`Akış türü [${next.title}]: ${type} (bellek önbelleği açık)`);
+      resource = createAudioResource(onb.okuyucu(0), { inputType: StreamType.Opus });
+    } else {
+      logger.info(`Akış türü [${next.title}]: ${type}`);
+      resource = createAudioResource(kaynak, { inputType: type });
+    }
     state.player.play(resource);
     sendPanel(state);
     otomatikOnYukle(state);
@@ -304,7 +439,9 @@ async function playNext(guildId) {
     logger.error('Şarkı çalınırken hata oluştu', err);
     state.killStream?.();
     next.failed = true;
-    state.textChannel.send(`⚠️ **${next.title}** çalınamadı, sıradakine geçiyorum.`).catch(() => {});
+    // Durum bu arada yok edildiyse ya da şarkı değiştiyse kullanıcıya hata yazma, zinciri sürdürme.
+    if (getState(guildId) !== state || state.current !== next) return;
+    state.textChannel.send(`⚠️ **${next.title}** çalınamadı: ${ytdlp.kisaHata(err)}. Sıradakine geçiyorum.`).catch(() => {});
     playNext(guildId);
   }
 }
@@ -326,6 +463,12 @@ function baglantiKur(guild, voiceChannel, player) {
     logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}${ek}`);
   });
 
+  // Ağ hataları (UDP/WebSocket) bağlantıda 'error' olayıyla yayınlanıyor; dinleyici yoksa Node bunu yakalanmamış
+  // istisna sayıp süreci çökertir (Docker botu yeniden başlatır, kuyruk ve çalan şarkı kaybolur).
+  connection.on('error', (err) => {
+    logger.error(`Ses bağlantısı hatası [${guild.name}]`, err);
+  });
+
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
     try {
       await Promise.race([
@@ -333,6 +476,9 @@ function baglantiKur(guild, voiceChannel, player) {
         entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
       ]);
     } catch {
+      // Bu bağlantı artık geçerli değilse (bölge değişiminde eskisi yıkılıp yenisi kuruldu) yeni durumu yok etme:
+      // eskiden 5 sn sonra bot yeni bağlantıyla birlikte sessizce kanaldan çıkıyordu.
+      if (getState(guild.id)?.connection !== connection) return;
       destroyState(guild.id);
     }
   });
@@ -364,7 +510,10 @@ function createState(guild, voiceChannel, textChannel) {
     leaveTimer: null,
     queueBittiTimer: null,
     panelMessage: null,
+    onbellek: null,
     denenenBolgeler: [],
+    sonBolge: null,
+    duzYenidenDenendi: false,
   };
 
   player.on('stateChange', (eski, yeni) => {
@@ -409,6 +558,9 @@ function skip(guildId) {
   if (!state) return;
   state.skipRequested = true;
   state.player.stop();
+  // Şarkı henüz çalmıyorsa (yt-dlp ilk veriyi bekliyor) player boşta olduğu için stop() etkisiz kalıyordu ve
+  // bayrak ancak 45 sn sonra okunuyordu. Akışı kesmek, bekleyen başlatmanın hemen vazgeçmesini sağlar.
+  state.killStream?.();
 }
 
 // Oynatıcı zaten Idle'sa player.stop() hiçbir olay tetiklemiyor ve bot kanalda asılı kalıyordu;
@@ -446,11 +598,25 @@ async function seek(guildId, saniye) {
 
   const hedef = state.current;
 
+  // Şarkı bellekte tutuluyorsa sarma, paket dizisinde konum değiştirmekten ibaret: ağ yok, ffmpeg yok, anında.
+  const onb = state.onbellek;
+  if (onb && !onb.temizlendi && !onb.eksik && onb.url === hedef.url) {
+    let index = Math.round((saniye * 1000) / paketOnbellegi.PAKET_MS);
+    // Şarkının sonunu aşan hedef son pakete çekilir (şarkı bitip sıradakine geçilir); inmemiş bölüme sarılırsa
+    // okuyucu paketler gelene kadar bekler.
+    if (onb.tamamlandi) index = Math.min(index, Math.max(0, onb.paketler.length - 1));
+    hedef.seekOffsetMs = index * paketOnbellegi.PAKET_MS;
+    state.player.play(createAudioResource(onb.okuyucu(index), { inputType: StreamType.Opus }));
+    refreshPanel(guildId);
+    return true;
+  }
+
   let akis;
   let girdi;
   try {
+    // Geri çağrı yalnızca akış başladıktan SONRAKİ kopmalar içindir; başlatma hataları fırlatılıp aşağıda yakalanır.
     akis = await ytdlp.createSeekStream(hedef.url, saniye, (err) => {
-      logger.error('yt-dlp/ffmpeg seek hatası', err);
+      logger.error('yt-dlp/ffmpeg seek hatası (akış başladıktan sonra)', err);
       if (state.current === hedef) {
         state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
       }
@@ -458,8 +624,12 @@ async function seek(guildId, saniye) {
     // Opus paketleri kopyalandıysa (Ogg) türü tespit edilip olduğu gibi gönderilir; yoksa ham PCM'dir.
     girdi = akis.opus ? await akisiTani(akis.stream) : { stream: akis.stream, type: StreamType.Raw };
   } catch (err) {
+    // Yeni akış başlatılamadı: eski akışa dokunulmadı, çalan şarkı kesilmeden devam ediyor.
     akis?.kill();
-    logger.error('Seek akışı başlatılamadı', err);
+    logger.error('Seek akışı başlatılamadı (çalan şarkı devam ediyor)', err);
+    if (state.current === hedef) {
+      state.textChannel.send(`⚠️ **${hedef.title}** için saniyeye gidilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
+    }
     return false;
   }
 

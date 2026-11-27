@@ -3,10 +3,20 @@ services:
     build: .
     restart: always
     env_file: .env
+    # Konteyner günlükleri sınırsız büyümesin (varsayılan json-file'da sınır yok): 3 x 10 MB.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - bot-data:/app/data
+      # yt-dlp'nin önbelleği (YouTube oynatıcı betiği/imza çözümü): her deploy'da silinirse yeniden başlatmadan sonraki
+      # ilk şarkı isteği yavaş (soğuk önbellek) oluyordu.
+      - yt-dlp-cache:/root/.cache/yt-dlp
       # YouTube çerez dosyası (secrets/youtube-cookies.txt, repoda yok): salt okunur; bot yazılabilir kopyasını kullanır
       - ./secrets:/app/secrets:ro
 
 volumes:
   bot-data:
+  yt-dlp-cache:
