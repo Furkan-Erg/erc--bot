@@ -128,7 +128,7 @@ async function getInfo(url) {
   return { url: videoUrl, title, duration: Number.isFinite(sure) ? sure : null };
 }
 
-async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi) {
+async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi, zamanAsimiMs = 60_000) {
   const stdout = await ytdlpCalistir(
     [
       '--flat-playlist',
@@ -139,7 +139,7 @@ async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi) {
       '%(id)s\t%(duration)s\t%(channel)s\t%(title)s',
       url,
     ],
-    { timeout: 60_000, maxBuffer: 5 * 1024 * 1024 },
+    { timeout: zamanAsimiMs, maxBuffer: 5 * 1024 * 1024 },
     { playlist: true, sirayla },
   );
 
@@ -164,7 +164,8 @@ async function getPlaylist(url, limit = MAX_PLAYLIST, sirayla = onPlanSirasi) {
 // YouTube'un bir şarkıdan sonra otomatik geçtiği şarkılar, o şarkının "Mix" listesinden (list=RD<id>)
 // geliyor. Listenin ilk elemanı şarkının kendisi.
 function getMix(videoId, limit = 25) {
-  return getPlaylist(`https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`, limit, arkaPlanSirasi);
+  // Arka plan işi ama otomatik oynatma bunu beklerken kullanıcının !play'i de bekliyor: takılırsa uzun beklenmesin.
+  return getPlaylist(`https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`, limit, arkaPlanSirasi, 20_000);
 }
 
 // Kuyruktaki şarkıların linki farklı biçimlerde gelebiliyor (watch?v=, youtu.be/, shorts/).

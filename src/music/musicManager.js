@@ -19,7 +19,10 @@ const logger = require('../utils/logger');
 
 const LOOP_MODLARI = ['kapali', 'sarki', 'kuyruk'];
 const BOS_KANAL_BEKLEME_MS = 30_000;
-const SIRA_BITTI_BEKLEME_MS = 15_000;
+// Sıra bitince bot hemen çıkmaz: her yeni istek yeni bir ses bağlantısı (el sıkışma) demek ve el sıkışma bazen
+// takılıyor. Kısa süre kalmak art arda isteklerde bağlantıyı yeniden kurmayı önler. Kanalda kimse kalmazsa
+// bot yine 30 sn sonra çıkar (BOS_KANAL_BEKLEME_MS).
+const SIRA_BITTI_BEKLEME_MS = Number(process.env.SIRA_BITTI_BEKLEME_MS) || 120_000;
 // Otomatik oynatma aynı şarkıları döndürmesin diye son çalınanlar hatırlanıyor.
 const CALINAN_HAFIZA = 200;
 // Mix listelerinde ara sıra 1 saatlik derlemeler çıkıyor; otomatik oynatmada onlar atlanıyor.
@@ -130,13 +133,44 @@ const YEDEK_BOLGELER = (process.env.VOICE_REGIONS || 'rotterdam,frankfurt,milan,
   .map((b) => b.trim())
   .filter(Boolean);
 
-const BAGLANTI_BEKLEME_MS = 20_000;
+// Sağlıklı bir ses el sıkışması 1-3 sn sürer; bölge değişiminden sonra biraz daha uzun olabilir. 20 sn'de hata
+// mesajı ve bölge denemeleri çok geç geliyordu (4 bölge ≈ 100 sn sessizlik).
+const BAGLANTI_BEKLEME_MS = Number(process.env.VOICE_BAGLANTI_BEKLEME_MS) || 15_000;
 
-async function bolgeDegistirVeYenidenBagla(state, guildId) {
+// Bölge değişiminden sonra bağlantı kurulan bölge sunucu başına hatırlanır: sonraki oturumda ya da başka bir
+// kanalda önce o denenir, her seferinde listeyi baştan 15 sn'lik bekleyişlerle gezmek gerekmez.
+const calisanBolgeler = new Map();
+
+// Eski bağlantıyı yıkıp aynı kanala yeni bir bağlantı kurar.
+function baglantiyiYenile(state) {
+  try {
+    state.connection.destroy();
+  } catch {
+    // zaten kapanmış olabilir
+  }
+  state.connection = baglantiKur(state.voiceChannel.guild, state.voiceChannel, state.player);
+}
+
+async function bolgeDegistirVeYenidenBagla(state, guildId, zamanAsimi) {
   const kanal = state.voiceChannel;
   if (!kanal) return false;
 
-  const bolge = YEDEK_BOLGELER.find((b) => !state.denenenBolgeler.includes(b));
+  // Zaman aşımı değil de başka bir hata (DNS, geçici WebSocket hatası) ise bölgeye dokunmadan önce bir kez
+  // yeniden bağlanılır: bölge değişimi kalıcıdır ve kanaldaki herkesin bağlantısını kısa süre bozar.
+  if (!zamanAsimi && !state.duzYenidenDenendi) {
+    state.duzYenidenDenendi = true;
+    logger.info(`Ses bağlantısı bölge değiştirilmeden yeniden deneniyor (#${kanal.name}, ${kanal.guild.name})`);
+    state.textChannel.send('🔄 Ses bağlantısı kurulamadı, yeniden deniyorum…').catch(() => {});
+    baglantiyiYenile(state);
+    return true;
+  }
+
+  // Kanalın şu anki bölgesi bu oturumda zaten başarısız oldu: aynısını denemek 15 sn'yi boşa harcar.
+  const mevcutBolge = kanal.rtcRegion ?? null;
+  if (mevcutBolge && !state.denenenBolgeler.includes(mevcutBolge)) state.denenenBolgeler.push(mevcutBolge);
+
+  const adaylar = [calisanBolgeler.get(guildId), ...YEDEK_BOLGELER].filter(Boolean);
+  const bolge = adaylar.find((b) => !state.denenenBolgeler.includes(b));
   if (!bolge) return false;
 
   const izinler = kanal.permissionsFor(kanal.guild.members.me);
@@ -146,7 +180,11 @@ async function bolgeDegistirVeYenidenBagla(state, guildId) {
   }
 
   state.denenenBolgeler.push(bolge);
+  state.sonBolge = bolge;
   logger.info(`Ses bölgesi "${bolge}" olarak deneniyor (#${kanal.name}, ${kanal.guild.name})`);
+  state.textChannel
+    .send(`🔄 Ses sunucusuna bağlanamadım, kanalın bölgesini **${bolge}** olarak deniyorum…`)
+    .catch(() => {});
 
   try {
     await kanal.setRTCRegion(bolge, 'Otomatik ses sunucusuna bağlanılamadı');
@@ -155,13 +193,7 @@ async function bolgeDegistirVeYenidenBagla(state, guildId) {
     return false;
   }
 
-  try {
-    state.connection.destroy();
-  } catch {
-    // zaten kapanmış olabilir
-  }
-
-  state.connection = baglantiKur(kanal.guild, kanal, state.player);
+  baglantiyiYenile(state);
   return true;
 }
 
@@ -169,17 +201,21 @@ async function baglantiyiBekle(state, guildId) {
   for (;;) {
     try {
       await entersState(state.connection, VoiceConnectionStatus.Ready, BAGLANTI_BEKLEME_MS);
+      // Bölge değiştirilip bağlantı kurulduysa o bölge hatırlanır.
+      if (state.sonBolge) calisanBolgeler.set(guildId, state.sonBolge);
       return true;
     } catch (err) {
+      // entersState süre dolunca AbortError ile reddeder; başka hata (ağ/DNS) gerçek zaman aşımı değildir.
+      const zamanAsimi = err?.name === 'AbortError';
       logger.error(
-        `Sesli kanala bağlanılamadı (sunucu: ${guildId}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`,
+        `Sesli kanala bağlanılamadı (sunucu: ${guildId}, ${zamanAsimi ? 'zaman aşımı' : 'hata'}, durum: ${state.connection.state.status}, ${agAsamasi(state.connection)})`,
         err
       );
 
       // State bu arada yok edilmişse (stop, kanal boşaldı vb.) uğraşmayı bırak.
       if (getState(guildId) !== state) return false;
 
-      if (await bolgeDegistirVeYenidenBagla(state, guildId)) continue;
+      if (await bolgeDegistirVeYenidenBagla(state, guildId, zamanAsimi)) continue;
 
       const sebep = state.denenenBolgeler.length
         ? `Denediğim bölgeler: ${state.denenenBolgeler.join(', ')}. Kanalın **Bölge Geçersiz Kılma** ayarını elle değiştirmeyi dene.`
@@ -470,6 +506,8 @@ function createState(guild, voiceChannel, textChannel) {
     panelMessage: null,
     onbellek: null,
     denenenBolgeler: [],
+    sonBolge: null,
+    duzYenidenDenendi: false,
   };
 
   player.on('stateChange', (eski, yeni) => {
