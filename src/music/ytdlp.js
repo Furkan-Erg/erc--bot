@@ -457,7 +457,13 @@ function createStream(url, onError) {
 
   let stderr = '';
   proc.stderr.on('data', (chunk) => {
-    stderr += chunk;
+    stderr = (stderr + chunk).slice(-4000);
+  });
+  // Süreç kapandığında (başarılı ya da hatalı) çözülür; çağıran, veri gelmeden kapanan akışın sebebini (stderr)
+  // kısa süre bekleyip alabilsin diye.
+  const kapandi = new Promise((coz) => {
+    proc.once('close', coz);
+    proc.once('error', coz);
   });
   proc.on('error', (err) => {
     temizle();
@@ -466,13 +472,31 @@ function createStream(url, onError) {
   proc.on('close', (code) => {
     temizle();
     if (code && code !== 0 && !proc.killed) {
-      onError(new Error(stderr.trim().split('\n').pop() || `yt-dlp ${code} koduyla çıktı`));
+      onError(new Error(sonSatir(stderr) || `yt-dlp ${code} koduyla çıktı`));
     }
   });
   // ffmpeg akışı erken kapatırsa EPIPE fırlamasın
   proc.stdout.on('error', () => {});
 
-  return { stream: proc.stdout, kill: () => proc.kill('SIGKILL') };
+  // `stderrSon`: yt-dlp'nin son hata satırı (süreç öldürülünce onError çağrılmadığı için zaman aşımında sebebi buradan alınır).
+  return { stream: proc.stdout, kill: () => proc.kill('SIGKILL'), stderrSon: () => sonSatir(stderr), kapandi };
 }
 
-module.exports = { getInfo, getPlaylist, getMix, videoIdOf, createStream, createSeekStream, kisaHata, MAX_PLAYLIST };
+// Geçici sorunlarda (yavaş başlama, anlık YouTube reddi) yeniden denemek işe yarar; video kalıcı olarak erişilemezse yaramaz.
+function yenidenDenenebilirMi(err) {
+  return !/Video unavailable|Private video|has been removed|age.?restricted|confirm your age|not available|members-only|copyright/i.test(
+    String(err?.message ?? err ?? ''),
+  );
+}
+
+module.exports = {
+  getInfo,
+  getPlaylist,
+  getMix,
+  videoIdOf,
+  createStream,
+  createSeekStream,
+  kisaHata,
+  yenidenDenenebilirMi,
+  MAX_PLAYLIST,
+};

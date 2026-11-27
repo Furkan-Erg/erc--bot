@@ -28,7 +28,10 @@ const OTOMATIK_EKLEYEN = '♾️ Otomatik oynatma';
 
 // yt-dlp takılırsa oynatıcı sonsuza kadar sessiz beklerdi; ilk veri bu sürede gelmezse şarkı hatalı sayılır.
 // Yavaş/yoğun sunucuda yt-dlp'nin imza çözümü bile 10-20 sn sürebildiği için süre cömert tutuluyor.
-const ILK_VERI_BEKLEME_MS = 45_000;
+const ILK_VERI_BEKLEME_MS = Number(process.env.ILK_VERI_BEKLEME_MS) || 45_000;
+// İlk veri gelmezse (yt-dlp takıldı, anlık YouTube reddi) akış bu kadar kez denenir.
+const AKIS_DENEME = 2;
+const bekle = (ms) => new Promise((coz) => setTimeout(coz, ms));
 
 // Akışın ilk baytlarına bakıp türünü (WebM/Ogg Opus ya da başka) tespit eder; zaman aşımı korumalı.
 function akisiTani(stream) {
@@ -230,6 +233,56 @@ function calinanlaraEkle(state, track) {
   if (state.calinanlar.length > CALINAN_HAFIZA) state.calinanlar.shift();
 }
 
+// YouTube'dan şarkı akışını başlatır ve ilk verinin geldiğini doğrular. İlk veri gelmezse (yt-dlp takıldı ya da
+// veri vermeden kapandı) bir kez daha dener; böylece geçici bir sorun şarkıyı atlatmaz. Başlatma sırasında şarkı
+// atlandı/durduruldu ise `null` döner. Yeniden deneme sonuç vermezse hata fırlatır (sebep mesajında).
+async function akisBaslat(state, next, guildId) {
+  let sonHata = null;
+  for (let deneme = 1; deneme <= AKIS_DENEME; deneme++) {
+    let basladi = false;
+    let baslangicHatasi = null;
+    const { stream, kill, stderrSon, kapandi } = ytdlp.createStream(next.url, (err) => {
+      // Başlangıçtaki hatalar aşağıda (deneme döngüsünde) ele alınır; akış başladıktan sonraki kopmalar burada.
+      if (!basladi) {
+        baslangicHatasi = err;
+        return;
+      }
+      logger.error('yt-dlp hatası', err);
+      // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
+      next.failed = true;
+      if (state.current === next) {
+        state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
+      }
+    });
+    state.killStream = kill;
+
+    try {
+      // Akışın türü ilk baytlardan anlaşılır: YouTube Opus (WebM) verirse paketler Discord'a olduğu gibi gider
+      // (ffmpeg'le çözüp yeniden kodlama yok); başka bir biçimse ffmpeg'e dönüştürtülür.
+      const sonuc = await akisiTani(stream);
+      if ((stream.bytesRead ?? 0) === 0) {
+        // Veri gelmeden kapandı (yt-dlp hata verdi). Sebebi için süreç çıkışını kısa süre bekle.
+        await Promise.race([kapandi, bekle(1500)]);
+        throw baslangicHatasi ?? new Error(stderrSon() || 'akış veri vermeden kapandı');
+      }
+      basladi = true;
+      return { ...sonuc, kill };
+    } catch (err) {
+      kill();
+      // Zaman aşımında süreç öldürüldüğü için onError çağrılmaz; sebep stderr'den alınır.
+      sonHata = baslangicHatasi ?? (stderrSon() ? new Error(`${err.message}: ${stderrSon()}`) : err);
+
+      // Başlatma sırasında şarkı atlandı ya da durduruldu: hata değil, vazgeçildi.
+      if (getState(guildId) !== state || state.current !== next || state.skipRequested) return null;
+      if (deneme === AKIS_DENEME || !ytdlp.yenidenDenenebilirMi(sonHata)) throw sonHata;
+
+      logger.warn(`Şarkı başlatılamadı, yeniden deneniyor (${deneme}/${AKIS_DENEME}) [${next.title}]: ${sonHata.message}`);
+      state.textChannel.send(`⏳ **${next.title}** hazırlanırken takıldı, bir kez daha deniyorum…`).catch(() => {});
+    }
+  }
+  throw sonHata;
+}
+
 async function playNext(guildId) {
   const state = guildStates.get(guildId);
   if (!state) return;
@@ -288,6 +341,13 @@ async function playNext(guildId) {
   // Bağlantı hazır olmadan çalmaya başlarsak ses gitmiyor ve hiçbir hata da çıkmıyor.
   if (!(await baglantiyiBekle(state, guildId))) return;
 
+  // Bağlantı beklenirken durum yok edildiyse ya da şarkı atlandıysa (skip bekleyen şarkıyı da geçer) vazgeç.
+  if (getState(guildId) !== state || state.current !== next) return;
+  if (state.skipRequested) {
+    playNext(guildId);
+    return;
+  }
+
   try {
     if (tekrarOnbellek) {
       if (getState(guildId) !== state || state.current !== next || state.skipRequested || tekrarOnbellek.temizlendi) {
@@ -301,21 +361,16 @@ async function playNext(guildId) {
       return;
     }
 
-    const { stream, kill } = ytdlp.createStream(next.url, (err) => {
-      logger.error('yt-dlp hatası', err);
-      // Döngü modunda bozuk şarkı sonsuza kadar yeniden denenmesin.
-      next.failed = true;
-      if (state.current === next) {
-        state.textChannel.send(`⚠️ **${next.title}** çekilemedi: ${ytdlp.kisaHata(err)}.`).catch(() => {});
-      }
-    });
-    state.killStream = kill;
+    const baslatilan = await akisBaslat(state, next, guildId);
 
-    // Akışın türü ilk baytlardan anlaşılır: YouTube Opus (WebM) verirse paketler Discord'a olduğu gibi
-    // gider (ffmpeg'le çözüp yeniden kodlama yok); başka bir biçimse ffmpeg'e dönüştürtülür.
-    const { stream: kaynak, type } = await akisiTani(stream);
+    // Başlatma sırasında şarkı atlandıysa ya da durduruldu: bu akış çalınmaz.
+    if (!baslatilan) {
+      if (getState(guildId) === state && state.current === next) playNext(guildId);
+      return;
+    }
+    const { stream: kaynak, type, kill } = baslatilan;
 
-    // Tanıma beklenirken şarkı atlandıysa ya da bağlantı kapandıysa bu akışı çalma.
+    // Başlatma bittiği anda şarkı atlandıysa ya da bağlantı kapandıysa bu akışı çalma.
     if (getState(guildId) !== state || state.current !== next || state.skipRequested) {
       kill();
       if (getState(guildId) === state && state.current === next) playNext(guildId);
@@ -342,7 +397,9 @@ async function playNext(guildId) {
     logger.error('Şarkı çalınırken hata oluştu', err);
     state.killStream?.();
     next.failed = true;
-    state.textChannel.send(`⚠️ **${next.title}** çalınamadı, sıradakine geçiyorum.`).catch(() => {});
+    // Durum bu arada yok edildiyse ya da şarkı değiştiyse kullanıcıya hata yazma, zinciri sürdürme.
+    if (getState(guildId) !== state || state.current !== next) return;
+    state.textChannel.send(`⚠️ **${next.title}** çalınamadı: ${ytdlp.kisaHata(err)}. Sıradakine geçiyorum.`).catch(() => {});
     playNext(guildId);
   }
 }
@@ -457,6 +514,9 @@ function skip(guildId) {
   if (!state) return;
   state.skipRequested = true;
   state.player.stop();
+  // Şarkı henüz çalmıyorsa (yt-dlp ilk veriyi bekliyor) player boşta olduğu için stop() etkisiz kalıyordu ve
+  // bayrak ancak 45 sn sonra okunuyordu. Akışı kesmek, bekleyen başlatmanın hemen vazgeçmesini sağlar.
+  state.killStream?.();
 }
 
 // Oynatıcı zaten Idle'sa player.stop() hiçbir olay tetiklemiyor ve bot kanalda asılı kalıyordu;
