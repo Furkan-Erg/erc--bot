@@ -364,6 +364,12 @@ function baglantiKur(guild, voiceChannel, player) {
     logger.info(`Ses bağlantısı [${guild.name}]: ${eski.status} -> ${yeni.status}${ek}`);
   });
 
+  // Ağ hataları (UDP/WebSocket) bağlantıda 'error' olayıyla yayınlanıyor; dinleyici yoksa Node bunu yakalanmamış
+  // istisna sayıp süreci çökertir (Docker botu yeniden başlatır, kuyruk ve çalan şarkı kaybolur).
+  connection.on('error', (err) => {
+    logger.error(`Ses bağlantısı hatası [${guild.name}]`, err);
+  });
+
   connection.on(VoiceConnectionStatus.Disconnected, async () => {
     try {
       await Promise.race([
@@ -371,6 +377,9 @@ function baglantiKur(guild, voiceChannel, player) {
         entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
       ]);
     } catch {
+      // Bu bağlantı artık geçerli değilse (bölge değişiminde eskisi yıkılıp yenisi kuruldu) yeni durumu yok etme:
+      // eskiden 5 sn sonra bot yeni bağlantıyla birlikte sessizce kanaldan çıkıyordu.
+      if (getState(guild.id)?.connection !== connection) return;
       destroyState(guild.id);
     }
   });

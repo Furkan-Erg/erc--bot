@@ -390,6 +390,12 @@ async function ytdlpSeekAkisi(url, saniye, onError) {
     ytCalistirmaHatasi = err;
     if (basladi) onError(err);
   });
+  // ffmpeg başlatılamazsa (ENOENT vb.) 'error' dinleyicisi yoksa süreç çöker.
+  let ffCalistirmaHatasi = null;
+  ff.on('error', (err) => {
+    ffCalistirmaHatasi = err;
+    if (basladi) onError(err);
+  });
   yt.on('close', (code) => {
     temizle();
     if (basladi && code && code !== 0 && !yt.killed) onError(new Error(sonSatir(ytStderr) || `yt-dlp ${code} koduyla çıktı`));
@@ -404,7 +410,9 @@ async function ytdlpSeekAkisi(url, saniye, onError) {
     akis = await ilkVeriyiBekle(ff.stdout, YEDEK_ILK_VERI_BEKLEME_MS, 'yt-dlp yedek yolu');
   } catch (err) {
     kill();
-    throw new Error(sonSatir(ytStderr) || ytCalistirmaHatasi?.message || sonSatir(ffStderr) || err.message);
+    throw new Error(
+      sonSatir(ytStderr) || ytCalistirmaHatasi?.message || ffCalistirmaHatasi?.message || sonSatir(ffStderr) || err.message,
+    );
   }
   basladi = true;
   return { stream: akis, kill, opus: false };
